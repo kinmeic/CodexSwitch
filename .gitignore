@@ -1,0 +1,23 @@
+# Build
+build/
+DerivedData/
+
+# Xcode project (regenerate via ruby generate_project.rb)
+CodexSwitch.xcodeproj/xcuserdata/
+CodexSwitch.xcodeproj/project.xcworkspace/
+*.xcuserdata
+*.xcworkspace
+*.moved-aside
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Swift
+.build/
+.swiftpm/
