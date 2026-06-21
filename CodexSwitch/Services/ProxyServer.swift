@@ -386,9 +386,11 @@ final class ProxyServer {
         responsesRequest = historyStore.enrichWithHistory(responsesRequest)
 
         // Convert Responses -> Chat Completions
+        var toolContext = ToolNameContext()
         var chatRequest = protocolConverter.responsesToChatCompletions(
             body: responsesRequest,
-            reasoningConfig: provider.chatReasoning
+            reasoningConfig: provider.effectiveReasoning,
+            toolContext: &toolContext
         )
 
         // Map model ID if needed
@@ -418,11 +420,11 @@ final class ProxyServer {
         if isStreaming {
             streamForwardWithConversion(request: urlRequest, provider: provider,
                                        connection: connection, originalRequest: originalRequest,
-                                       startedAt: startedAt)
+                                       startedAt: startedAt, toolContext: toolContext)
         } else {
             simpleForwardWithConversion(request: urlRequest, provider: provider,
                                       connection: connection, originalRequest: originalRequest,
-                                      startedAt: startedAt)
+                                      startedAt: startedAt, toolContext: toolContext)
         }
     }
 
@@ -431,7 +433,8 @@ final class ProxyServer {
         provider: CodexProvider,
         connection: NWConnection,
         originalRequest: HTTPRequest,
-        startedAt: Date
+        startedAt: Date,
+        toolContext: ToolNameContext
     ) {
         let task = NetworkSessionManager.shared.session.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
@@ -475,7 +478,8 @@ final class ProxyServer {
 
             let responsesResponse = self.protocolConverter.chatCompletionToResponse(
                 body: chatCompletion,
-                reasoningConfig: provider.chatReasoning
+                reasoningConfig: provider.effectiveReasoning,
+                toolContext: toolContext
             )
 
             self.historyStore.cacheFromResponse(responsesResponse)
@@ -501,12 +505,14 @@ final class ProxyServer {
         provider: CodexProvider,
         connection: NWConnection,
         originalRequest: HTTPRequest,
-        startedAt: Date
+        startedAt: Date,
+        toolContext: ToolNameContext
     ) {
         let streamingConverter = StreamingConverter(
             provider: provider,
             protocolConverter: protocolConverter,
-            historyStore: historyStore
+            historyStore: historyStore,
+            toolContext: toolContext
         )
 
         Task { [weak self] in

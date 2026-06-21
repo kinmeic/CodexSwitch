@@ -7,7 +7,12 @@ enum CodexConfigManager {
 
     // MARK: - Apply Provider
 
-    static func applyProvider(_ provider: CodexProvider, port: Int, gatewayToken: String) throws {
+    static func applyProvider(
+        _ provider: CodexProvider,
+        port: Int,
+        gatewayToken: String,
+        preserveOfficialAuth: Bool = false
+    ) throws {
         let paths = resolvePaths()
         let snapshot = snapshotFiles([paths.configTOMLPath, paths.modelCatalogPath, paths.authJSONPath])
 
@@ -18,15 +23,21 @@ enum CodexConfigManager {
             try writeConfigTOML(provider: provider, port: port, gatewayToken: gatewayToken,
                                configPath: paths.configTOMLPath)
 
-            // Write model catalog (only if provider has models)
+            // Add model catalog (only if provider has models)
             if !provider.modelCatalog.isEmpty {
                 try writeModelCatalog(provider.modelCatalog, catalogPath: paths.modelCatalogPath,
                                      configPath: paths.configTOMLPath)
             }
 
-            // Write auth.json
-            if !provider.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // Write auth.json — third-party providers may skip this to keep the
+            // user's ChatGPT login cache (auth.json) intact across switches.
+            // Authentication then flows through the provider-scoped
+            // experimental_bearer_token written into config.toml above (direct
+            // mode) or through the in-memory proxy gateway (proxy mode).
+            if shouldWriteAuthJSON(for: provider, preserveOfficialAuth: preserveOfficialAuth) {
                 try writeAuthJSON(apiKey: provider.apiKey, authPath: paths.authJSONPath)
+            } else {
+                logger.info("Skipped auth.json write to preserve ChatGPT login for '\(provider.name)'")
             }
 
             logger.info("Applied provider '\(provider.name)' to Codex config")
@@ -54,6 +65,23 @@ enum CodexConfigManager {
 
         // Preserve auth.json (contains ChatGPT login cache)
         logger.info("Restored Codex CLI to official mode")
+    }
+
+    /// Whether applying `provider` should overwrite `auth.json`.
+    ///
+    /// Official providers always own `auth.json` when they carry a key.
+    /// Third-party providers skip the write when `preserveOfficialAuth` is on,
+    /// authenticating via `experimental_bearer_token` in `config.toml` instead
+    /// so the user's ChatGPT login cache survives provider switches.
+    private static func shouldWriteAuthJSON(
+        for provider: CodexProvider,
+        preserveOfficialAuth: Bool
+    ) -> Bool {
+        let hasKey = !provider.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if provider.isOfficial {
+            return hasKey
+        }
+        return hasKey && !preserveOfficialAuth
     }
 
     // MARK: - Paths

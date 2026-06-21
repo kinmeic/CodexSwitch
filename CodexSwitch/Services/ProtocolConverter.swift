@@ -1,10 +1,48 @@
 import Foundation
 
+/// Tracks the mapping between flattened Chat Completions tool names and the
+/// original Responses API names. Responses API tools may carry namespaced
+/// identifiers (e.g. `custom__namespace__toolName`) that some upstreams reject;
+/// the converter flattens them on the request side and restores them on the
+/// response side so Codex sees the original names.
+struct ToolNameContext {
+    private var flattenedToOriginal: [String: String] = [:]
+
+    /// Record a tool: returns the (possibly flattened) name to send upstream,
+    /// and remembers how to restore it.
+    mutating func register(_ originalName: String) -> String {
+        let flattened = ToolNameContext.flatten(originalName)
+        if flattened != originalName {
+            flattenedToOriginal[flattened] = originalName
+        }
+        return flattened
+    }
+
+    /// Restore an upstream tool name back to its original Responses form.
+    func restore(_ flattenedName: String) -> String {
+        flattenedToOriginal[flattenedName] ?? flattenedName
+    }
+
+    /// Flatten a namespaced Responses tool name to a plain identifier.
+    /// `custom__ns__toolName` → `toolName`. Names without `__` are unchanged.
+    static func flatten(_ name: String) -> String {
+        let parts = name.components(separatedBy: "__")
+        if let last = parts.last, !last.isEmpty {
+            return last
+        }
+        return name
+    }
+}
+
 final class ProtocolConverter {
 
     // MARK: - Request Conversion: Responses -> Chat Completions
 
-    func responsesToChatCompletions(body: [String: Any], reasoningConfig: CodexChatReasoning?) -> [String: Any] {
+    func responsesToChatCompletions(
+        body: [String: Any],
+        reasoningConfig: CodexChatReasoning?,
+        toolContext: inout ToolNameContext
+    ) -> [String: Any] {
         var result: [String: Any] = [:]
 
         // Map model
@@ -23,6 +61,9 @@ final class ProtocolConverter {
         } else if let input = body["input"] as? String {
             messages.append(["role": "user", "content": input])
         }
+        // Strip private (`_`-prefixed) fields from every message so internal
+        // metadata the Codex CLI attaches never leaks to the upstream provider.
+        messages = messages.map { Self.stripPrivateParams($0) as! [String: Any] }
 
         // Collapse system messages to head (MiniMax compatibility)
         let systemMessages = messages.filter { ($0["role"] as? String) == "system" }
@@ -54,9 +95,11 @@ final class ProtocolConverter {
             }
         }
 
-        // Map tools
+        // Map tools — flatten namespaced tool names so upstreams that reject
+        // `__` (vLLM, enterprise gateways) accept them. Original names are
+        // recorded in toolContext for response-side restoration.
         if let tools = body["tools"] as? [[String: Any]] {
-            let chatTools = tools.compactMap { convertTool($0) }
+            let chatTools = tools.compactMap { convertTool($0, toolContext: &toolContext) }
             if !chatTools.isEmpty {
                 result["tools"] = chatTools
             }
@@ -70,19 +113,23 @@ final class ProtocolConverter {
         return result
     }
 
-    private func convertTool(_ tool: [String: Any]) -> [String: Any]? {
+    private func convertTool(_ tool: [String: Any], toolContext: inout ToolNameContext) -> [String: Any]? {
         guard let type = tool["type"] as? String, type == "function" else { return nil }
 
         if let function = tool["function"] as? [String: Any] {
+            var flattenedFunction = function
+            if let name = function["name"] as? String {
+                flattenedFunction["name"] = toolContext.register(name)
+            }
             return [
                 "type": "function",
-                "function": function
+                "function": flattenedFunction
             ]
         }
 
         // Responses API format: tool with name, parameters
         if let name = tool["name"] as? String {
-            var function: [String: Any] = ["name": name]
+            var function: [String: Any] = ["name": toolContext.register(name)]
             if let parameters = tool["parameters"] {
                 function["parameters"] = parameters
             }
@@ -202,8 +249,13 @@ final class ProtocolConverter {
     }
 
     private func applyReasoningConfig(_ config: CodexChatReasoning, to result: inout [String: Any], from body: [String: Any]) {
+        // Detect whether the request asks for reasoning. Codex's
+        // `reasoning.effort` controls this; absence means reasoning off.
+        let requestedEffort = (body["reasoning"] as? [String: Any])?["effort"] as? String
+        let reasoningEnabled = requestedEffort != nil
+
         // Apply thinking parameter
-        if config.supportsThinking {
+        if config.supportsThinking, reasoningEnabled {
             switch config.thinkingParam {
             case "thinking":
                 result["thinking"] = ["type": "enabled"]
@@ -217,9 +269,7 @@ final class ProtocolConverter {
         }
 
         // Apply effort parameter
-        if config.supportsEffort,
-           let reasoning = body["reasoning"] as? [String: Any],
-           let effortValue = reasoning["effort"] as? String {
+        if config.supportsEffort, let effortValue = requestedEffort {
             let mappedEffort = mapEffortValue(effortValue, mode: config.effortValueMode)
 
             switch config.effortParam {
@@ -232,6 +282,12 @@ final class ProtocolConverter {
             default:
                 break
             }
+        } else if config.effortParam == "reasoning.effort" {
+            // OpenRouter "explicit off": some OpenRouter models default to
+            // thinking-on and cannot be turned off by merely omitting the
+            // field. Forward `{reasoning:{effort:"none"}}` so the model
+            // actually disables reasoning.
+            result["reasoning"] = ["effort": "none"]
         }
     }
 
@@ -271,7 +327,11 @@ final class ProtocolConverter {
 
     // MARK: - Response Conversion: Chat Completions -> Responses
 
-    func chatCompletionToResponse(body: [String: Any], reasoningConfig: CodexChatReasoning?) -> [String: Any] {
+    func chatCompletionToResponse(
+        body: [String: Any],
+        reasoningConfig: CodexChatReasoning?,
+        toolContext: ToolNameContext = ToolNameContext()
+    ) -> [String: Any] {
         var result: [String: Any] = [:]
 
         let responseId = "resp_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
@@ -330,7 +390,7 @@ final class ProtocolConverter {
             ])
         }
 
-        // Extract tool calls
+        // Extract tool calls — restore original Responses tool names
         if let toolCalls = message["tool_calls"] as? [[String: Any]] {
             for call in toolCalls {
                 if let id = call["id"] as? String,
@@ -341,7 +401,7 @@ final class ProtocolConverter {
                         "type": "function_call",
                         "id": "fc_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))",
                         "call_id": id,
-                        "name": name,
+                        "name": toolContext.restore(name),
                         "arguments": arguments,
                         "status": "completed"
                     ])
@@ -422,6 +482,27 @@ final class ProtocolConverter {
         }
 
         return (cleaned.trimmingCharacters(in: .whitespacesAndNewlines), thinking.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    // MARK: - Private Parameter Filtering
+
+    /// Recursively strip keys beginning with `_` from a JSON object, so
+    /// internal metadata the Codex CLI attaches (e.g. `_meta`, `_debug`) is not
+    /// forwarded to upstream providers that may reject unknown fields.
+    /// JSON Schema property names are preserved so user tool schemas remain intact.
+    static func stripPrivateParams(_ value: Any) -> Any {
+        if let dict = value as? [String: Any] {
+            var filtered: [String: Any] = [:]
+            for (key, val) in dict {
+                if key.hasPrefix("_") { continue }
+                filtered[key] = stripPrivateParams(val)
+            }
+            return filtered
+        }
+        if let array = value as? [Any] {
+            return array.map { stripPrivateParams($0) }
+        }
+        return value
     }
 
     // MARK: - Error Conversion

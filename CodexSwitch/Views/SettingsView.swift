@@ -41,6 +41,9 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 300)
                 }
+
+                Toggle("Preserve ChatGPT login", isOn: $appState.preserveOfficialAuth)
+                    .help("When on, switching to a third-party provider authenticates via experimental_bearer_token in config.toml and leaves auth.json untouched, so your cached ChatGPT login survives switches.")
             }
 
             // Outbound Proxy

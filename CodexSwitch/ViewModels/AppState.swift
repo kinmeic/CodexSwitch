@@ -47,6 +47,12 @@ final class AppState: ObservableObject {
     @Published var codexConfigPath: String {
         didSet { AppEnvironment.shared.set(codexConfigPath, forKey: "codexConfigPath") }
     }
+    /// When on, switching to a third-party provider authenticates via the
+    /// provider-scoped `experimental_bearer_token` in config.toml and leaves
+    /// `auth.json` untouched, so a cached ChatGPT login survives switches.
+    @Published var preserveOfficialAuth: Bool {
+        didSet { AppEnvironment.shared.set(preserveOfficialAuth, forKey: "preserveOfficialAuth") }
+    }
     @Published private(set) var proxyRunning = false
     @Published private(set) var requestLogs: [ProxyRequestLog] = []
 
@@ -81,6 +87,7 @@ final class AppState: ObservableObject {
         self.autoStartProxy = defaults.bool(forKey: "autoStartProxy")
         self.outboundProxyURL = defaults.string(forKey: "outboundProxyURL") ?? ""
         self.codexConfigPath = defaults.string(forKey: "codexConfigPath") ?? AppEnvironment.defaultCodexConfigPath
+        self.preserveOfficialAuth = defaults.bool(forKey: "preserveOfficialAuth")
 
         // Load or generate gateway token
         if let stored = defaults.string(forKey: "gatewayToken"), !stored.isEmpty {
@@ -152,7 +159,7 @@ final class AppState: ObservableObject {
                     syncRunningProxy(provider: provider, showRestartNotice: true)
                 } else if isApplied {
                     // Re-apply config even if proxy not running
-                    try? CodexConfigManager.applyProvider(provider, port: proxyPort, gatewayToken: gatewayToken)
+                    try? CodexConfigManager.applyProvider(provider, port: proxyPort, gatewayToken: gatewayToken, preserveOfficialAuth: preserveOfficialAuth)
                 }
             }
         }
@@ -208,7 +215,7 @@ final class AppState: ObservableObject {
 
         // Apply config
         do {
-            try CodexConfigManager.applyProvider(provider, port: proxyPort, gatewayToken: gatewayToken)
+            try CodexConfigManager.applyProvider(provider, port: proxyPort, gatewayToken: gatewayToken, preserveOfficialAuth: preserveOfficialAuth)
         } catch {
             proxyServer.lastError = "Failed to apply Codex config: \(error.localizedDescription)"
             logger.error("Failed to apply config: \(error.localizedDescription)")
@@ -288,7 +295,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            try CodexConfigManager.applyProvider(provider, port: proxyPort, gatewayToken: gatewayToken)
+            try CodexConfigManager.applyProvider(provider, port: proxyPort, gatewayToken: gatewayToken, preserveOfficialAuth: preserveOfficialAuth)
 
             if provider.apiFormat == .chatCompletions {
                 if proxyServer.running {

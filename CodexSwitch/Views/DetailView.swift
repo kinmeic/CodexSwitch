@@ -18,6 +18,11 @@ struct DetailView: View {
                     Label("Providers", systemImage: "server.rack")
                 }
 
+            OAuthLoginView()
+                .tabItem {
+                    Label("ChatGPT", systemImage: "person.badge.key")
+                }
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")

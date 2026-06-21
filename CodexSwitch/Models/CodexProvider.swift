@@ -59,6 +59,56 @@ struct CodexChatReasoning: Codable, Equatable {
         effortValueMode: nil,
         outputFormat: "reasoning_content"
     )
+
+    static let glm = CodexChatReasoning(
+        supportsThinking: true,
+        supportsEffort: false,
+        thinkingParam: "thinking",
+        effortParam: "none",
+        effortValueMode: nil,
+        outputFormat: "reasoning_content"
+    )
+
+    static let minimax = CodexChatReasoning(
+        supportsThinking: true,
+        supportsEffort: false,
+        thinkingParam: "reasoning_split",
+        effortParam: "none",
+        effortValueMode: nil,
+        outputFormat: "reasoning_details"
+    )
+
+    static let mimo = CodexChatReasoning(
+        supportsThinking: true,
+        supportsEffort: false,
+        thinkingParam: "thinking",
+        effortParam: "none",
+        effortValueMode: nil,
+        outputFormat: "reasoning_content"
+    )
+
+    // MARK: - Aggregator platform dialects
+    // Platform rules take precedence over model rules: a DeepSeek model hosted
+    // on OpenRouter uses OpenRouter's `reasoning.effort` parameter, not
+    // DeepSeek's `reasoning_effort`.
+
+    static let openrouter = CodexChatReasoning(
+        supportsThinking: false,
+        supportsEffort: true,
+        thinkingParam: "thinking",       // unused (OpenRouter has no thinking flag)
+        effortParam: "reasoning.effort",
+        effortValueMode: "openrouter",   // clamps max→xhigh (OpenRouter rejects "max")
+        outputFormat: "reasoning_content"
+    )
+
+    static let siliconflow = CodexChatReasoning(
+        supportsThinking: true,
+        supportsEffort: false,
+        thinkingParam: "enable_thinking",
+        effortParam: "none",
+        effortValueMode: nil,
+        outputFormat: "reasoning_content"
+    )
 }
 
 // MARK: - Model Catalog Entry
@@ -122,5 +172,30 @@ struct CodexProvider: Identifiable, Codable, Equatable {
         modelCatalog = try container.decodeIfPresent([CodexCatalogModel].self, forKey: .modelCatalog) ?? []
         chatReasoning = try container.decodeIfPresent(CodexChatReasoning.self, forKey: .chatReasoning)
         isOfficial = try container.decodeIfPresent(Bool.self, forKey: .isOfficial) ?? false
+    }
+
+    /// The reasoning dialect to apply for this provider. Platform rules take
+    /// precedence over model rules: a model hosted on OpenRouter uses
+    /// OpenRouter's `reasoning.effort` parameter even if the model's native
+    /// dialect (e.g. DeepSeek's `reasoning_effort`) would say otherwise.
+    var effectiveReasoning: CodexChatReasoning? {
+        if let platform = CodexProvider.platformReasoning(for: baseURL) {
+            return platform
+        }
+        return chatReasoning
+    }
+
+    /// Detect a known aggregator platform from the base URL and return its
+    /// reasoning dialect. Returns nil for model-native providers.
+    static func platformReasoning(for baseURL: String) -> CodexChatReasoning? {
+        let host = (URL(string: baseURL)?.host ?? baseURL).lowercased()
+
+        if host.contains("openrouter.ai") {
+            return .openrouter
+        }
+        if host.contains("siliconflow") {
+            return .siliconflow
+        }
+        return nil
     }
 }

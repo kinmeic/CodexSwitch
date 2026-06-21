@@ -36,8 +36,14 @@ final class ChatHistoryStore {
     }
 
     func enrichWithHistory(_ request: [String: Any]) -> [String: Any] {
-        guard var input = request["input"] as? [[String: Any]] else {
-            return request
+        // Restore items referenced by previous_response_id first: Chat
+        // Completions has no server-side state, so a Responses request that
+        // points at a prior turn (whose items aren't in `input`) must have
+        // those items reinjected before conversion.
+        var enriched = restorePreviousResponseId(request)
+
+        guard var input = enriched["input"] as? [[String: Any]] else {
+            return enriched
         }
 
         lock.lock()
@@ -58,8 +64,46 @@ final class ChatHistoryStore {
             enrichedInput.append(item)
         }
 
-        var enriched = request
         enriched["input"] = enrichedInput
+        return enriched
+    }
+
+    /// Restore the output items of a previous turn referenced by
+    /// `previous_response_id`. Codex CLI uses `previous_response_id` to carry
+    /// state across turns without resending prior items; when converting to
+    /// Chat Completions (which is stateless) those items must be reinjected
+    /// into `input` so tool-call chains and conversation history survive.
+    private func restorePreviousResponseId(_ request: [String: Any]) -> [String: Any] {
+        guard let prevId = request["previous_response_id"] as? String else {
+            return request
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let cached = cache[prevId],
+              let prevOutput = cached["output"] as? [[String: Any]] else {
+            return request
+        }
+
+        let restorable = prevOutput.filter { item in
+            switch item["type"] as? String {
+            case "message", "function_call", "function_call_output":
+                return true
+            default:
+                return false
+            }
+        }
+
+        guard !restorable.isEmpty else { return request }
+
+        var input = request["input"] as? [[String: Any]] ?? []
+        input.insert(contentsOf: restorable, at: 0)
+
+        var enriched = request
+        enriched["input"] = input
+        // Chat Completions has no concept of previous_response_id.
+        enriched.removeValue(forKey: "previous_response_id")
         return enriched
     }
 }

@@ -7,11 +7,14 @@ final class StreamingConverter {
     private let provider: CodexProvider
     private let protocolConverter: ProtocolConverter
     private let historyStore: ChatHistoryStore
+    private let toolContext: ToolNameContext
 
-    init(provider: CodexProvider, protocolConverter: ProtocolConverter, historyStore: ChatHistoryStore) {
+    init(provider: CodexProvider, protocolConverter: ProtocolConverter, historyStore: ChatHistoryStore,
+         toolContext: ToolNameContext = ToolNameContext()) {
         self.provider = provider
         self.protocolConverter = protocolConverter
         self.historyStore = historyStore
+        self.toolContext = toolContext
     }
 
     func convertStream(bytes: URLSession.AsyncBytes) async throws -> [Data] {
@@ -30,6 +33,12 @@ final class StreamingConverter {
         var reasoningItemId = ""
         var reasoningItemStarted = false
 
+        // Split non-standard inline `<think>...</think>` tags out of content
+        // deltas and route them to the reasoning channel. Some Chat
+        // Completions upstreams (GLM, Kimi, etc.) emit reasoning inline rather
+        // than via `reasoning_content`.
+        let thinkSplitter = InlineThinkSplitter()
+
         for try await line in bytes.lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
@@ -42,6 +51,18 @@ final class StreamingConverter {
             let eventData = String(trimmed.dropFirst(6))
 
             if eventData == "[DONE]" {
+                // Flush any buffered inline-think content before completing.
+                for segment in thinkSplitter.flush() {
+                    switch segment {
+                    case .text(let text):
+                        emitTextDelta(text, responseId: responseId, currentMessageId: &currentMessageId,
+                                      outputIndex: &outputIndex, fullContent: &fullContent, chunks: &chunks)
+                    case .reasoning(let reasoning):
+                        emitReasoningDelta(reasoning, responseId: responseId, reasoningItemId: &reasoningItemId,
+                                           reasoningItemStarted: &reasoningItemStarted, outputIndex: &outputIndex,
+                                           fullReasoning: &fullReasoning, chunks: &chunks)
+                    }
+                }
                 chunks.append(contentsOf: generateCompletionEvents(
                     responseId: responseId,
                     output: buildOutputForCaching(content: fullContent, reasoning: fullReasoning, toolCalls: toolCalls)
@@ -65,44 +86,25 @@ final class StreamingConverter {
 
             // Handle reasoning_content
             if let reasoning = delta["reasoning_content"] as? String, !reasoning.isEmpty {
-                fullReasoning += reasoning
-
-                if !reasoningItemStarted {
-                    reasoningItemId = "rs_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
-                    chunks.append(contentsOf: generateReasoningStart(responseId: responseId, itemId: reasoningItemId, outputIndex: outputIndex))
-                    reasoningItemStarted = true
-                    outputIndex += 1
-                }
-
-                chunks.append(formatSSE([
-                    "type": "response.reasoning_summary_text.delta",
-                    "response_id": responseId,
-                    "item_id": reasoningItemId,
-                    "output_index": outputIndex - 1,
-                    "delta": reasoning
-                ]))
+                emitReasoningDelta(reasoning, responseId: responseId, reasoningItemId: &reasoningItemId,
+                                   reasoningItemStarted: &reasoningItemStarted, outputIndex: &outputIndex,
+                                   fullReasoning: &fullReasoning, chunks: &chunks)
             }
 
-            // Handle content
+            // Handle content — route through the inline-think splitter so that
+            // non-standard ` Reid... Reeves` tags become reasoning events.
             if let content = delta["content"] as? String, !content.isEmpty {
-                if currentMessageId.isEmpty {
-                    currentMessageId = "msg_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
-                    chunks.append(contentsOf: generateMessageStart(
-                        responseId: responseId,
-                        messageId: currentMessageId,
-                        outputIndex: outputIndex
-                    ))
-                    outputIndex += 1
+                for segment in thinkSplitter.feed(content) {
+                    switch segment {
+                    case .text(let text):
+                        emitTextDelta(text, responseId: responseId, currentMessageId: &currentMessageId,
+                                      outputIndex: &outputIndex, fullContent: &fullContent, chunks: &chunks)
+                    case .reasoning(let reasoning):
+                        emitReasoningDelta(reasoning, responseId: responseId, reasoningItemId: &reasoningItemId,
+                                           reasoningItemStarted: &reasoningItemStarted, outputIndex: &outputIndex,
+                                           fullReasoning: &fullReasoning, chunks: &chunks)
+                    }
                 }
-
-                fullContent += content
-                chunks.append(formatSSE([
-                    "type": "response.output_text.delta",
-                    "response_id": responseId,
-                    "item_id": currentMessageId,
-                    "output_index": outputIndex - 1,
-                    "delta": content
-                ]))
             }
 
             // Handle tool_calls
@@ -112,8 +114,9 @@ final class StreamingConverter {
 
                     if index >= toolCalls.count {
                         let callId = (call["id"] as? String) ?? "call_\(UUID().uuidString)"
-                        let functionName = (call["function"] as? [String: Any])?["name"] as? String ?? ""
-                        toolCalls.append((id: callId, name: functionName, arguments: ""))
+                        let rawName = (call["function"] as? [String: Any])?["name"] as? String ?? ""
+                        let restoredName = toolContext.restore(rawName)
+                        toolCalls.append((id: callId, name: restoredName, arguments: ""))
 
                         let fcId = "fc_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
                         chunks.append(formatSSE([
@@ -124,7 +127,7 @@ final class StreamingConverter {
                                 "id": fcId,
                                 "type": "function_call",
                                 "call_id": callId,
-                                "name": functionName,
+                                "name": restoredName,
                                 "arguments": "",
                                 "status": "in_progress"
                             ] as [String: Any]
@@ -154,6 +157,63 @@ final class StreamingConverter {
         historyStore.cacheFromResponse(responseDict)
 
         return chunks
+    }
+
+    // MARK: - Segment Emitters
+
+    private func emitTextDelta(
+        _ text: String,
+        responseId: String,
+        currentMessageId: inout String,
+        outputIndex: inout Int,
+        fullContent: inout String,
+        chunks: inout [Data]
+    ) {
+        if currentMessageId.isEmpty {
+            currentMessageId = "msg_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
+            chunks.append(contentsOf: generateMessageStart(
+                responseId: responseId,
+                messageId: currentMessageId,
+                outputIndex: outputIndex
+            ))
+            outputIndex += 1
+        }
+
+        fullContent += text
+        chunks.append(formatSSE([
+            "type": "response.output_text.delta",
+            "response_id": responseId,
+            "item_id": currentMessageId,
+            "output_index": outputIndex - 1,
+            "delta": text
+        ]))
+    }
+
+    private func emitReasoningDelta(
+        _ reasoning: String,
+        responseId: String,
+        reasoningItemId: inout String,
+        reasoningItemStarted: inout Bool,
+        outputIndex: inout Int,
+        fullReasoning: inout String,
+        chunks: inout [Data]
+    ) {
+        fullReasoning += reasoning
+
+        if !reasoningItemStarted {
+            reasoningItemId = "rs_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
+            chunks.append(contentsOf: generateReasoningStart(responseId: responseId, itemId: reasoningItemId, outputIndex: outputIndex))
+            reasoningItemStarted = true
+            outputIndex += 1
+        }
+
+        chunks.append(formatSSE([
+            "type": "response.reasoning_summary_text.delta",
+            "response_id": responseId,
+            "item_id": reasoningItemId,
+            "output_index": outputIndex - 1,
+            "delta": reasoning
+        ]))
     }
 
     // MARK: - Event Generators
