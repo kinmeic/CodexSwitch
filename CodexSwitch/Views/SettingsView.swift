@@ -44,6 +44,9 @@ struct SettingsView: View {
 
                 Toggle("Preserve ChatGPT login", isOn: $appState.preserveOfficialAuth)
                     .help("When on, switching to a third-party provider authenticates via experimental_bearer_token in config.toml and leaves auth.json untouched, so your cached ChatGPT login survives switches.")
+
+                Toggle("Inject prompt cache key", isOn: $appState.injectPromptCacheKey)
+                    .help("When on, injects a stable prompt_cache_key into upstream Responses-API requests that omit one, so OpenAI affinity-routes to a consistent backend and prefix caching hits across turns. Responses-only; Chat Completions upstreams are unaffected.")
             }
 
             // Outbound Proxy

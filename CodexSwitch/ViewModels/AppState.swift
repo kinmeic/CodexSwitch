@@ -53,6 +53,16 @@ final class AppState: ObservableObject {
     @Published var preserveOfficialAuth: Bool {
         didSet { AppEnvironment.shared.set(preserveOfficialAuth, forKey: "preserveOfficialAuth") }
     }
+    /// Inject a stable `prompt_cache_key` into upstream Responses-API requests
+    /// when Codex CLI omits one, so OpenAI affinity-routes to a consistent
+    /// backend and prefix caching can hit across turns. Responses-only;
+    /// Chat Completions upstreams do not support this field.
+    @Published var injectPromptCacheKey: Bool {
+        didSet {
+            AppEnvironment.shared.set(injectPromptCacheKey, forKey: "injectPromptCacheKey")
+            proxyServer.injectPromptCacheKey = injectPromptCacheKey
+        }
+    }
     @Published private(set) var proxyRunning = false
     @Published private(set) var requestLogs: [ProxyRequestLog] = []
 
@@ -88,6 +98,7 @@ final class AppState: ObservableObject {
         self.outboundProxyURL = defaults.string(forKey: "outboundProxyURL") ?? ""
         self.codexConfigPath = defaults.string(forKey: "codexConfigPath") ?? AppEnvironment.defaultCodexConfigPath
         self.preserveOfficialAuth = defaults.bool(forKey: "preserveOfficialAuth")
+        self.injectPromptCacheKey = defaults.bool(forKey: "injectPromptCacheKey")
 
         // Load or generate gateway token
         if let stored = defaults.string(forKey: "gatewayToken"), !stored.isEmpty {
@@ -115,6 +126,7 @@ final class AppState: ObservableObject {
         }()
 
         NetworkSessionManager.shared.updateProxyURL(outboundProxyURL)
+        proxyServer.injectPromptCacheKey = injectPromptCacheKey
 
         // Bind proxy state
         proxyServer.$running

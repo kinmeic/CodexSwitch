@@ -32,6 +32,28 @@ enum AppEnvironment {
     static var modelsCachePath: String {
         "\(codexConfigPath)/models_cache.json"
     }
+
+    /// A stable per-install id (8 hex chars) used to build a
+    /// `prompt_cache_key` for upstream Responses-API requests, so OpenAI
+    /// affinity-routes this proxy's traffic to a consistent backend and prefix
+    /// caching can hit across turns. Generated once and persisted.
+    static var hostKey: String {
+        if let stored = shared.string(forKey: "hostKey"), !stored.isEmpty {
+            return stored
+        }
+        let generated = Self.generateHostKey()
+        shared.set(generated, forKey: "hostKey")
+        return generated
+    }
+
+    private static func generateHostKey() -> String {
+        var bytes = [UInt8](repeating: 0, count: 4)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        guard status == errSecSuccess else {
+            return String(UUID().uuidString.prefix(8)).lowercased()
+        }
+        return bytes.map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 final class NetworkSessionManager {

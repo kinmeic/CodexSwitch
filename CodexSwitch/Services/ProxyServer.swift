@@ -44,6 +44,9 @@ final class ProxyServer {
     private let queue = DispatchQueue(label: "com.codex.switch.proxy", qos: .userInitiated)
     private var gatewayToken: String = ""
     private var activeProvider: CodexProvider?
+    /// Whether to inject a stable prompt_cache_key into upstream Responses
+    /// requests when the client omits one. Synced from AppState settings.
+    var injectPromptCacheKey: Bool = false
     private let maxRequestBodyBytes = 10 * 1024 * 1024
 
     let protocolConverter = ProtocolConverter()
@@ -223,10 +226,27 @@ final class ProxyServer {
                            originalRequest: request, startedAt: startedAt)
         } else {
             // Direct: forward to upstream /v1/responses
-            forwardDirect(provider: provider, body: request.body,
+            let outboundBody = injectedCacheKeyBody(request.body)
+            forwardDirect(provider: provider, body: outboundBody,
                          isStreaming: isStreaming, connection: connection,
                          originalRequest: request, startedAt: startedAt)
         }
+    }
+
+    /// Inject a stable `prompt_cache_key` into a Responses-API request body when
+    /// the client omitted one, so OpenAI affinity-routes to a consistent
+    /// backend and prefix caching hits across turns. Never overrides an existing
+    /// key. Only valid for Responses upstreams (the caller guarantees direct mode).
+    private func injectedCacheKeyBody(_ body: Data) -> Data {
+        guard injectPromptCacheKey,
+              var json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            return body
+        }
+        if let existing = json["prompt_cache_key"] as? String, !existing.isEmpty {
+            return body
+        }
+        json["prompt_cache_key"] = AppEnvironment.hostKey
+        return (try? JSONSerialization.data(withJSONObject: json)) ?? body
     }
 
     // MARK: - Direct Forward
