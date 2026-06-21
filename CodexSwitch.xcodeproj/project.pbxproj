@@ -7,55 +7,55 @@
 		objects = {
 
 	/* Begin PBXBuildFile section */
-		22B2BCE37498CE513911C7B6 /* CodexSwitchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92FDA793AF333F3AF61B9B4F /* CodexSwitchApp.swift */; };
-		C2B8C6D4FA4B4EFCDF01F321 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A557A484E2805A638E23B5A /* AppEnvironment.swift */; };
-		9BF8156C6B615B3E9EA44A32 /* CodexProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61D796D6C475AF70D6BBDEE5 /* CodexProvider.swift */; };
-		D38BEAFF2AB680CDAD2718B9 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D85E6C11A8FE5D4EE199823 /* AppState.swift */; };
-		6AFDF979FC29BF27A4C77E25 /* ProxyServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125FF542F6D685E9DFF05277 /* ProxyServer.swift */; };
-		9B6E35DCEE386A4BD67775EF /* CodexConfigManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3BED94C238EB868A1A201FF /* CodexConfigManager.swift */; };
-		A1F363CC13CAA4F081EB1371 /* ProtocolConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFB1661F81B3A21AE862E43F /* ProtocolConverter.swift */; };
-		78CC799F48C468B2660CBEEE /* StreamingConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87B14986D8D3AEA3777EBDBA /* StreamingConverter.swift */; };
-		CFA4C2B289963E942D5DD75C /* InlineThinkSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD95CBAB0647A491ADB8EA4B /* InlineThinkSplitter.swift */; };
-		586ED5E4AE71BACDE33B6324 /* ChatHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70ECCDBF1AD6E11D1DA16867 /* ChatHistoryStore.swift */; };
-		ED4CAA0588C11CD4EA94F21F /* CodexOAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CD869AD6D1B7654C48A6E56 /* CodexOAuthManager.swift */; };
-		8ADA14E26E107FE84071D1C5 /* PresetProviders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7623300172642ED08A089F63 /* PresetProviders.swift */; };
-		34171AAD739DF5C282E7B162 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00C2805F42A81BB44A32CCD5 /* MainWindow.swift */; };
-		776E974F1D3F8D8FC2D7998F /* MenuBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBC0FA278AD6EA84DF0E49A /* MenuBarMenu.swift */; };
-		78290E232A8BEEA8868DE654 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42B07D2D358C455485CB1551 /* DetailView.swift */; };
-		33C8875FC1E3C0A7DB20C4E0 /* ConnectionStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE24B17C2744B3B5F33D6924 /* ConnectionStatusView.swift */; };
-		9956A0EE276C6681D74FAF19 /* ProviderListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C5E86DEBF5603799D6B3D8 /* ProviderListView.swift */; };
-		D91875FD724FD209AD15DEAF /* OAuthLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9745E92939A55393101BB475 /* OAuthLoginView.swift */; };
-		38EA10298E2DE10095CDF91C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41B9B4AC34083EC09EC2592E /* SettingsView.swift */; };
-		7D614E2A546C87EFE9E9A84A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 443A1F1508752F5342D6898D /* Assets.xcassets */; };
+		A615F67CFFA8F562D813CCFC /* CodexSwitchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D2847EDA5279888244DFA8 /* CodexSwitchApp.swift */; };
+		5E36C79DD59415CD8CEB0463 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 979302EE58D1C28DF3F21DF8 /* AppEnvironment.swift */; };
+		8AF5229344022ADAA98AA5A2 /* CodexProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210D78F2AB673C93C60A56B4 /* CodexProvider.swift */; };
+		E8798EA314F7E56D0FF55B89 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DB5391CC3B22AE6E329BE5A /* AppState.swift */; };
+		BA9542DA4DB4A911455481DB /* ProxyServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5398E940C984859FC0955CA /* ProxyServer.swift */; };
+		595E7FFBEB908D6C263E9688 /* CodexConfigManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F91C511D69DBB1AD025F4E16 /* CodexConfigManager.swift */; };
+		4CB0017285D433225141CE13 /* ProtocolConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98745BA70422494D0D3239F6 /* ProtocolConverter.swift */; };
+		4E1E3291883DCE5CBDE9741F /* StreamingConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83C4BD4FFAE16E1CC39239FE /* StreamingConverter.swift */; };
+		C421B00C10F95C3FFCE06084 /* InlineThinkSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2DB18AB0A810C2D60C09673 /* InlineThinkSplitter.swift */; };
+		BBFDBA787DB467B4916053D3 /* ChatHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF976E1C24F26FE4ACD190D5 /* ChatHistoryStore.swift */; };
+		550FFDF649543039A733C010 /* CodexOAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 016332CAEC06DA3B9D848B69 /* CodexOAuthManager.swift */; };
+		0313D7E7CC063936F8B2C543 /* PresetProviders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09F7AF1B8FAE707F6EA3C0E1 /* PresetProviders.swift */; };
+		0B1DE3CCC924773546AB757A /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3CC57FB18B725F96C17461E /* MainWindow.swift */; };
+		4D8DAD621C31FCD888A11FF0 /* MenuBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C9BE3B55ECFC76ED5085E6A /* MenuBarMenu.swift */; };
+		086C53E432CD7FF2F9787E89 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1157D1ED0D15AC3B56FB14D2 /* DetailView.swift */; };
+		E4581BA82A0D66D88AC50667 /* ConnectionStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48429132786958A0583B1E01 /* ConnectionStatusView.swift */; };
+		2917D1E8B97C50BC1C162594 /* ProviderListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48EF5C65DF7C4E13D0F35B84 /* ProviderListView.swift */; };
+		E3103F0B4D881BDC50B46DE7 /* OAuthLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 588153AC0DAACC62CEB7CECD /* OAuthLoginView.swift */; };
+		FBFB4BE44E46801E3D5ECDA9 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7FE8878AC79CC6EE628CA9C /* SettingsView.swift */; };
+		DD0DFD675C23C8654766B447 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1B08D3BD3C65B5B923E353FB /* Assets.xcassets */; };
 	/* End PBXBuildFile section */
 
 	/* Begin PBXFileReference section */
-		92FDA793AF333F3AF61B9B4F /* CodexSwitchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CodexSwitchApp.swift"; sourceTree = "<group>"; };
-		1A557A484E2805A638E23B5A /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppEnvironment.swift"; sourceTree = "<group>"; };
-		61D796D6C475AF70D6BBDEE5 /* CodexProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CodexProvider.swift"; sourceTree = "<group>"; };
-		9D85E6C11A8FE5D4EE199823 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppState.swift"; sourceTree = "<group>"; };
-		125FF542F6D685E9DFF05277 /* ProxyServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProxyServer.swift"; sourceTree = "<group>"; };
-		A3BED94C238EB868A1A201FF /* CodexConfigManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CodexConfigManager.swift"; sourceTree = "<group>"; };
-		AFB1661F81B3A21AE862E43F /* ProtocolConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProtocolConverter.swift"; sourceTree = "<group>"; };
-		87B14986D8D3AEA3777EBDBA /* StreamingConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StreamingConverter.swift"; sourceTree = "<group>"; };
-		AD95CBAB0647A491ADB8EA4B /* InlineThinkSplitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "InlineThinkSplitter.swift"; sourceTree = "<group>"; };
-		70ECCDBF1AD6E11D1DA16867 /* ChatHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatHistoryStore.swift"; sourceTree = "<group>"; };
-		9CD869AD6D1B7654C48A6E56 /* CodexOAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CodexOAuthManager.swift"; sourceTree = "<group>"; };
-		7623300172642ED08A089F63 /* PresetProviders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PresetProviders.swift"; sourceTree = "<group>"; };
-		00C2805F42A81BB44A32CCD5 /* MainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainWindow.swift"; sourceTree = "<group>"; };
-		BBBC0FA278AD6EA84DF0E49A /* MenuBarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuBarMenu.swift"; sourceTree = "<group>"; };
-		42B07D2D358C455485CB1551 /* DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DetailView.swift"; sourceTree = "<group>"; };
-		DE24B17C2744B3B5F33D6924 /* ConnectionStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectionStatusView.swift"; sourceTree = "<group>"; };
-		B6C5E86DEBF5603799D6B3D8 /* ProviderListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProviderListView.swift"; sourceTree = "<group>"; };
-		9745E92939A55393101BB475 /* OAuthLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OAuthLoginView.swift"; sourceTree = "<group>"; };
-		41B9B4AC34083EC09EC2592E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsView.swift"; sourceTree = "<group>"; };
-		671836739C3BD5ED2185CE8F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		9F7ABB601DDF9BD04856CFD6 /* CodexSwitch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CodexSwitch.entitlements; sourceTree = "<group>"; };
-		443A1F1508752F5342D6898D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		33D2847EDA5279888244DFA8 /* CodexSwitchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CodexSwitchApp.swift"; sourceTree = "<group>"; };
+		979302EE58D1C28DF3F21DF8 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppEnvironment.swift"; sourceTree = "<group>"; };
+		210D78F2AB673C93C60A56B4 /* CodexProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CodexProvider.swift"; sourceTree = "<group>"; };
+		8DB5391CC3B22AE6E329BE5A /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppState.swift"; sourceTree = "<group>"; };
+		E5398E940C984859FC0955CA /* ProxyServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProxyServer.swift"; sourceTree = "<group>"; };
+		F91C511D69DBB1AD025F4E16 /* CodexConfigManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CodexConfigManager.swift"; sourceTree = "<group>"; };
+		98745BA70422494D0D3239F6 /* ProtocolConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProtocolConverter.swift"; sourceTree = "<group>"; };
+		83C4BD4FFAE16E1CC39239FE /* StreamingConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StreamingConverter.swift"; sourceTree = "<group>"; };
+		C2DB18AB0A810C2D60C09673 /* InlineThinkSplitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "InlineThinkSplitter.swift"; sourceTree = "<group>"; };
+		BF976E1C24F26FE4ACD190D5 /* ChatHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatHistoryStore.swift"; sourceTree = "<group>"; };
+		016332CAEC06DA3B9D848B69 /* CodexOAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CodexOAuthManager.swift"; sourceTree = "<group>"; };
+		09F7AF1B8FAE707F6EA3C0E1 /* PresetProviders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PresetProviders.swift"; sourceTree = "<group>"; };
+		C3CC57FB18B725F96C17461E /* MainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainWindow.swift"; sourceTree = "<group>"; };
+		5C9BE3B55ECFC76ED5085E6A /* MenuBarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuBarMenu.swift"; sourceTree = "<group>"; };
+		1157D1ED0D15AC3B56FB14D2 /* DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DetailView.swift"; sourceTree = "<group>"; };
+		48429132786958A0583B1E01 /* ConnectionStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConnectionStatusView.swift"; sourceTree = "<group>"; };
+		48EF5C65DF7C4E13D0F35B84 /* ProviderListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProviderListView.swift"; sourceTree = "<group>"; };
+		588153AC0DAACC62CEB7CECD /* OAuthLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OAuthLoginView.swift"; sourceTree = "<group>"; };
+		D7FE8878AC79CC6EE628CA9C /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsView.swift"; sourceTree = "<group>"; };
+		652597E97595D79BEA36942E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		78CF815AA70B338F1F5E68C9 /* CodexSwitch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CodexSwitch.entitlements; sourceTree = "<group>"; };
+		1B08D3BD3C65B5B923E353FB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 	/* End PBXFileReference section */
 
 	/* Begin PBXFrameworksBuildPhase section */
-		B5A1CCD0D4230797B5BC5902 /* Frameworks */ = {
+		204C294611F9104EC4A32C8B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -65,84 +65,84 @@
 	/* End PBXFrameworksBuildPhase section */
 
 	/* Begin PBXGroup section */
-		6A978A5BFC576ADB041B2522 /* Models */ = {
+		F9B0849F08B44F739BCD5B62 /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				61D796D6C475AF70D6BBDEE5 /* CodexProvider.swift */,
+				210D78F2AB673C93C60A56B4 /* CodexProvider.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
 		};
-		00936DC6A8D381593920146A /* ViewModels */ = {
+		36C11AE88BE5C0C7B693B243 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
-				9D85E6C11A8FE5D4EE199823 /* AppState.swift */,
+				8DB5391CC3B22AE6E329BE5A /* AppState.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
 		};
-		0992412B4538A73956B69B37 /* Views */ = {
+		2B8128BBF17BE533DED7002D /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				00C2805F42A81BB44A32CCD5 /* MainWindow.swift */,
-				BBBC0FA278AD6EA84DF0E49A /* MenuBarMenu.swift */,
-				42B07D2D358C455485CB1551 /* DetailView.swift */,
-				DE24B17C2744B3B5F33D6924 /* ConnectionStatusView.swift */,
-				B6C5E86DEBF5603799D6B3D8 /* ProviderListView.swift */,
-				9745E92939A55393101BB475 /* OAuthLoginView.swift */,
-				41B9B4AC34083EC09EC2592E /* SettingsView.swift */,
+				C3CC57FB18B725F96C17461E /* MainWindow.swift */,
+				5C9BE3B55ECFC76ED5085E6A /* MenuBarMenu.swift */,
+				1157D1ED0D15AC3B56FB14D2 /* DetailView.swift */,
+				48429132786958A0583B1E01 /* ConnectionStatusView.swift */,
+				48EF5C65DF7C4E13D0F35B84 /* ProviderListView.swift */,
+				588153AC0DAACC62CEB7CECD /* OAuthLoginView.swift */,
+				D7FE8878AC79CC6EE628CA9C /* SettingsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
 		};
-		8E8A491808A498DBE0B27982 /* Services */ = {
+		64585D31F17DD84CF27F137C /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				125FF542F6D685E9DFF05277 /* ProxyServer.swift */,
-				A3BED94C238EB868A1A201FF /* CodexConfigManager.swift */,
-				AFB1661F81B3A21AE862E43F /* ProtocolConverter.swift */,
-				87B14986D8D3AEA3777EBDBA /* StreamingConverter.swift */,
-				AD95CBAB0647A491ADB8EA4B /* InlineThinkSplitter.swift */,
-				70ECCDBF1AD6E11D1DA16867 /* ChatHistoryStore.swift */,
-				9CD869AD6D1B7654C48A6E56 /* CodexOAuthManager.swift */,
-				7623300172642ED08A089F63 /* PresetProviders.swift */,
+				E5398E940C984859FC0955CA /* ProxyServer.swift */,
+				F91C511D69DBB1AD025F4E16 /* CodexConfigManager.swift */,
+				98745BA70422494D0D3239F6 /* ProtocolConverter.swift */,
+				83C4BD4FFAE16E1CC39239FE /* StreamingConverter.swift */,
+				C2DB18AB0A810C2D60C09673 /* InlineThinkSplitter.swift */,
+				BF976E1C24F26FE4ACD190D5 /* ChatHistoryStore.swift */,
+				016332CAEC06DA3B9D848B69 /* CodexOAuthManager.swift */,
+				09F7AF1B8FAE707F6EA3C0E1 /* PresetProviders.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
 		};
-		E9F1159E3E39429F27C4CC38 /* CodexSwitch */ = {
+		F99D5AA2EF8BEBF352DF9BDA /* CodexSwitch */ = {
 			isa = PBXGroup;
 			children = (
-				92FDA793AF333F3AF61B9B4F /* CodexSwitchApp.swift */,
-				1A557A484E2805A638E23B5A /* AppEnvironment.swift */,
-				6A978A5BFC576ADB041B2522 /* Models */,
-				00936DC6A8D381593920146A /* ViewModels */,
-				0992412B4538A73956B69B37 /* Views */,
-				8E8A491808A498DBE0B27982 /* Services */,
-				443A1F1508752F5342D6898D /* Assets.xcassets */,
-				671836739C3BD5ED2185CE8F /* Info.plist */,
-				9F7ABB601DDF9BD04856CFD6 /* CodexSwitch.entitlements */,
+				33D2847EDA5279888244DFA8 /* CodexSwitchApp.swift */,
+				979302EE58D1C28DF3F21DF8 /* AppEnvironment.swift */,
+				F9B0849F08B44F739BCD5B62 /* Models */,
+				36C11AE88BE5C0C7B693B243 /* ViewModels */,
+				2B8128BBF17BE533DED7002D /* Views */,
+				64585D31F17DD84CF27F137C /* Services */,
+				1B08D3BD3C65B5B923E353FB /* Assets.xcassets */,
+				652597E97595D79BEA36942E /* Info.plist */,
+				78CF815AA70B338F1F5E68C9 /* CodexSwitch.entitlements */,
 			);
 			path = CodexSwitch;
 			sourceTree = "<group>";
 		};
-		3B6B0248AD21407A1A8BEEF9 = {
+		3C028D56F0C19C57AE20B360 = {
 			isa = PBXGroup;
 			children = (
-				E9F1159E3E39429F27C4CC38 /* CodexSwitch */,
+				F99D5AA2EF8BEBF352DF9BDA /* CodexSwitch */,
 			);
 			sourceTree = "<group>";
 		};
 	/* End PBXGroup section */
 
 	/* Begin PBXNativeTarget section */
-		8087DD71A10E92FE8592CC3C /* CodexSwitch */ = {
+		B3CD99D069E620C9238F0BB6 /* CodexSwitch */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 7C41138DAA0EA3D812453631 /* Build configuration list for PBXNativeTarget "CodexSwitch" */;
+			buildConfigurationList = 3C6B256794A28088178D9F95 /* Build configuration list for PBXNativeTarget "CodexSwitch" */;
 			buildPhases = (
-				99711BC3CAFDA327ECAB91A6 /* Sources */,
-				B5A1CCD0D4230797B5BC5902 /* Frameworks */,
-				7B96E849BD78F2E22B223781 /* Resources */,
+				06AE8CDA55E088BC3061EF10 /* Sources */,
+				204C294611F9104EC4A32C8B /* Frameworks */,
+				DD5133F06C801D14FB978C06 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -150,25 +150,25 @@
 			);
 			name = CodexSwitch;
 			productName = CodexSwitch;
-			productReference = C117B875BA564DBC8C417EBE /* CodexSwitch.app */;
+			productReference = 05EC1A65FE782EB634A4C463 /* CodexSwitch.app */;
 			productType = "com.apple.product-type.application";
 		};
 	/* End PBXNativeTarget section */
 
 	/* Begin PBXProject section */
-		C39E770E67695CBD99100E6B /* Project object */ = {
+		FBB68130CCF31D2E0CF75ED0 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1500;
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
-					8087DD71A10E92FE8592CC3C = {
+					B3CD99D069E620C9238F0BB6 = {
 						CreatedOnToolsVersion = 15.0;
 					};
 				};
 			};
-			buildConfigurationList = A1727C14411656E0652E7204 /* Build configuration list for PBXProject "CodexSwitch" */;
+			buildConfigurationList = 978153F1D343F560F84DE516 /* Build configuration list for PBXProject "CodexSwitch" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -176,58 +176,58 @@
 				en,
 				Base,
 			);
-			mainGroup = 3B6B0248AD21407A1A8BEEF9;
-			productRefGroup = E9F1159E3E39429F27C4CC38 /* CodexSwitch */;
+			mainGroup = 3C028D56F0C19C57AE20B360;
+			productRefGroup = F99D5AA2EF8BEBF352DF9BDA /* CodexSwitch */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				8087DD71A10E92FE8592CC3C /* CodexSwitch */,
+				B3CD99D069E620C9238F0BB6 /* CodexSwitch */,
 			);
 		};
 	/* End PBXProject section */
 
 	/* Begin PBXResourcesBuildPhase section */
-		7B96E849BD78F2E22B223781 /* Resources */ = {
+		DD5133F06C801D14FB978C06 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7D614E2A546C87EFE9E9A84A /* Assets.xcassets in Resources */,
+				DD0DFD675C23C8654766B447 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 	/* End PBXResourcesBuildPhase section */
 
 	/* Begin PBXSourcesBuildPhase section */
-		99711BC3CAFDA327ECAB91A6 /* Sources */ = {
+		06AE8CDA55E088BC3061EF10 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				22B2BCE37498CE513911C7B6 /* CodexSwitchApp.swift in Sources */,
-				C2B8C6D4FA4B4EFCDF01F321 /* AppEnvironment.swift in Sources */,
-				9BF8156C6B615B3E9EA44A32 /* CodexProvider.swift in Sources */,
-				D38BEAFF2AB680CDAD2718B9 /* AppState.swift in Sources */,
-				6AFDF979FC29BF27A4C77E25 /* ProxyServer.swift in Sources */,
-				9B6E35DCEE386A4BD67775EF /* CodexConfigManager.swift in Sources */,
-				A1F363CC13CAA4F081EB1371 /* ProtocolConverter.swift in Sources */,
-				78CC799F48C468B2660CBEEE /* StreamingConverter.swift in Sources */,
-				CFA4C2B289963E942D5DD75C /* InlineThinkSplitter.swift in Sources */,
-				586ED5E4AE71BACDE33B6324 /* ChatHistoryStore.swift in Sources */,
-				ED4CAA0588C11CD4EA94F21F /* CodexOAuthManager.swift in Sources */,
-				8ADA14E26E107FE84071D1C5 /* PresetProviders.swift in Sources */,
-				34171AAD739DF5C282E7B162 /* MainWindow.swift in Sources */,
-				776E974F1D3F8D8FC2D7998F /* MenuBarMenu.swift in Sources */,
-				78290E232A8BEEA8868DE654 /* DetailView.swift in Sources */,
-				33C8875FC1E3C0A7DB20C4E0 /* ConnectionStatusView.swift in Sources */,
-				9956A0EE276C6681D74FAF19 /* ProviderListView.swift in Sources */,
-				D91875FD724FD209AD15DEAF /* OAuthLoginView.swift in Sources */,
-				38EA10298E2DE10095CDF91C /* SettingsView.swift in Sources */,
+				A615F67CFFA8F562D813CCFC /* CodexSwitchApp.swift in Sources */,
+				5E36C79DD59415CD8CEB0463 /* AppEnvironment.swift in Sources */,
+				8AF5229344022ADAA98AA5A2 /* CodexProvider.swift in Sources */,
+				E8798EA314F7E56D0FF55B89 /* AppState.swift in Sources */,
+				BA9542DA4DB4A911455481DB /* ProxyServer.swift in Sources */,
+				595E7FFBEB908D6C263E9688 /* CodexConfigManager.swift in Sources */,
+				4CB0017285D433225141CE13 /* ProtocolConverter.swift in Sources */,
+				4E1E3291883DCE5CBDE9741F /* StreamingConverter.swift in Sources */,
+				C421B00C10F95C3FFCE06084 /* InlineThinkSplitter.swift in Sources */,
+				BBFDBA787DB467B4916053D3 /* ChatHistoryStore.swift in Sources */,
+				550FFDF649543039A733C010 /* CodexOAuthManager.swift in Sources */,
+				0313D7E7CC063936F8B2C543 /* PresetProviders.swift in Sources */,
+				0B1DE3CCC924773546AB757A /* MainWindow.swift in Sources */,
+				4D8DAD621C31FCD888A11FF0 /* MenuBarMenu.swift in Sources */,
+				086C53E432CD7FF2F9787E89 /* DetailView.swift in Sources */,
+				E4581BA82A0D66D88AC50667 /* ConnectionStatusView.swift in Sources */,
+				2917D1E8B97C50BC1C162594 /* ProviderListView.swift in Sources */,
+				E3103F0B4D881BDC50B46DE7 /* OAuthLoginView.swift in Sources */,
+				FBFB4BE44E46801E3D5ECDA9 /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 	/* End PBXSourcesBuildPhase section */
 
 	/* Begin XCBuildConfiguration section */
-		0E415A77BB311FC9A15A2FAE /* Debug */ = {
+		8822DFE02B5E6699930B69B4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = "NO";
@@ -290,7 +290,7 @@
 			};
 			name = Debug;
 		};
-		76CD3322691015DADE0BC9DD /* Release */ = {
+		34FC04691228B11F29C26C2F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = "NO";
@@ -352,7 +352,7 @@
 			};
 			name = Release;
 		};
-		591A87D15F5F46F5D5677F16 /* Debug */ = {
+		FC2B5E6534BD704BE0B8ABB3 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon";
@@ -370,7 +370,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = "13.0";
-				MARKETING_VERSION = "1.2.0";
+				MARKETING_VERSION = "1.3.0";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.codex.switch";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = "YES";
@@ -378,7 +378,7 @@
 			};
 			name = Debug;
 		};
-		8DD06041659F7539C6FA4CA8 /* Release */ = {
+		0F7E8DE2AF577149510B2A44 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon";
@@ -396,7 +396,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = "13.0";
-				MARKETING_VERSION = "1.2.0";
+				MARKETING_VERSION = "1.3.0";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.codex.switch";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = "YES";
@@ -407,25 +407,25 @@
 	/* End XCBuildConfiguration section */
 
 	/* Begin XCConfigurationList section */
-		A1727C14411656E0652E7204 /* Build configuration list for PBXProject "CodexSwitch" */ = {
+		978153F1D343F560F84DE516 /* Build configuration list for PBXProject "CodexSwitch" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				0E415A77BB311FC9A15A2FAE /* Debug */,
-				76CD3322691015DADE0BC9DD /* Release */,
+				8822DFE02B5E6699930B69B4 /* Debug */,
+				34FC04691228B11F29C26C2F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		7C41138DAA0EA3D812453631 /* Build configuration list for PBXNativeTarget "CodexSwitch" */ = {
+		3C6B256794A28088178D9F95 /* Build configuration list for PBXNativeTarget "CodexSwitch" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				591A87D15F5F46F5D5677F16 /* Debug */,
-				8DD06041659F7539C6FA4CA8 /* Release */,
+				FC2B5E6534BD704BE0B8ABB3 /* Debug */,
+				0F7E8DE2AF577149510B2A44 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 	/* End XCConfigurationList section */
 		};
-		rootObject = C39E770E67695CBD99100E6B /* Project object */;
+		rootObject = FBB68130CCF31D2E0CF75ED0 /* Project object */;
 	}

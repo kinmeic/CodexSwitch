@@ -1,0 +1,77 @@
+name: Release
+
+# Builds a universal (arm64 + x86_64) macOS .app on tag push and publishes
+# a GitHub Release with the zipped bundle. Also runnable manually via dispatch.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Regenerate Xcode project
+        run: ruby generate_project.rb
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(grep -oE 'MARKETING_VERSION = "[^"]+"' generate_project.rb | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building version $version"
+
+      - name: Build universal Release (arm64 + x86_64)
+        run: |
+          xcodebuild \
+            -project CodexSwitch.xcodeproj \
+            -target CodexSwitch \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ONLY_ACTIVE_ARCH=NO \
+            ARCHS="arm64 x86_64" \
+            build 2>&1 | tee build.log | tail -30
+
+      - name: Verify universal binary
+        run: |
+          binary="build/Release/CodexSwitch.app/Contents/MacOS/CodexSwitch"
+          archs=$(lipo -archs "$binary")
+          echo "Architectures: $archs"
+          for a in arm64 x86_64; do
+            if ! echo "$archs" | grep -qw "$a"; then
+              echo "::error::Missing architecture $a (got: $archs)"
+              exit 1
+            fi
+          done
+          echo "Both arm64 and x86_64 present"
+
+      - name: Package
+        run: |
+          cd build/Release
+          ditto -c -k --keepParent CodexSwitch.app "CodexSwitch-${{ steps.version.outputs.version }}-universal.zip"
+          ls -lh "CodexSwitch-${{ steps.version.outputs.version }}-universal.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CodexSwitch-${{ steps.version.outputs.version }}-universal
+          path: build/Release/CodexSwitch-${{ steps.version.outputs.version }}-universal.zip
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/Release/CodexSwitch-${{ steps.version.outputs.version }}-universal.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: false
