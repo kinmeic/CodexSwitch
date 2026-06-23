@@ -144,34 +144,22 @@ enum CodexConfigManager {
             toml += "review_model = \"\(tomlEscape(reviewModel))\"\n"
         }
 
-        toml += """
-        model_reasoning_effort = "high"
-        disable_response_storage = true
+        toml += "model_reasoning_effort = \"high\"\n"
+        toml += "disable_response_storage = true\n"
 
-        [model_providers.custom]
-        name = "\(escapedName)"
-        base_url = "\(escapedURL)"
-        wire_api = "responses"
-        requires_openai_auth = true
-        experimental_bearer_token = "\(escapedToken)"
-
-        """
-
-        // model_context_window and model_auto_compact_token_limit (90% of context window)
+        // model_context_window and model_auto_compact_token_limit — top-level keys
         if let ctx = contextWindow, ctx > 0 {
             toml += "model_context_window = \(ctx)\n"
             let compactLimit = Int(Double(ctx) * 0.9)
             toml += "model_auto_compact_token_limit = \(compactLimit)\n"
         }
 
-        // Add model catalog path if provider has models — write only the
-        // filename (relative), not the absolute path. Codex CLI resolves it
-        // relative to the config directory; absolute paths are not supported.
+        // model_catalog_json — top-level key pointing to our generated catalog
         if !provider.modelCatalog.isEmpty {
             toml += "model_catalog_json = \"\(AppEnvironment.CodexCatalogFilename)\"\n"
         }
 
-        // [features] goals
+        // [features] goals — top-level section
         if provider.goalsEnabled {
             toml += """
 
@@ -180,6 +168,18 @@ enum CodexConfigManager {
 
             """
         }
+
+        // [model_providers.custom] — must be last so subsequent keys don't
+        // accidentally fall inside this section
+        toml += """
+
+        [model_providers.custom]
+        name = "\(escapedName)"
+        base_url = "\(escapedURL)"
+        wire_api = "responses"
+        requires_openai_auth = true
+        experimental_bearer_token = "\(escapedToken)"
+        """
 
         try toml.write(toFile: configPath, atomically: true, encoding: .utf8)
         logger.info("Wrote config.toml with baseURL: \(baseURL)")
@@ -199,31 +199,31 @@ enum CodexConfigManager {
 
     private static func writeModelCatalog(_ models: [CodexCatalogModel], catalogPath: String,
                                            configPath: String) throws {
-        // Try to read models_cache.json for template
+        // Load the full gpt-5.5 template from models_cache.json — Codex CLI
+        // requires catalog entries to contain many fields (visibility,
+        // supported_in_api, shell_type, supported_reasoning_levels, etc.).
+        // We clone the entire template and override only 10 fields, matching
+        // the cc-switch Rust implementation exactly.
         let template = readModelTemplate()
 
         let catalog: [[String: Any]] = models.enumerated().map { index, model in
-            var entry: [String: Any] = [
-                "slug": model.model,
-                "display_name": model.displayName.isEmpty ? model.model : model.displayName,
-                "description": model.displayName.isEmpty ? model.model : model.displayName,
-                "priority": 1000 + index,
-            ]
+            // Start with a full clone of the template, then override specific fields
+            var entry = template
+
+            let displayName = model.displayName.isEmpty ? model.model : model.displayName
+            entry["slug"] = model.model
+            entry["display_name"] = displayName
+            entry["description"] = displayName
 
             if let contextWindow = model.contextWindow {
                 entry["context_window"] = contextWindow
                 entry["max_context_window"] = contextWindow
             }
 
-            // Merge template fields if available
-            if let baseInstructions = template["base_instructions"] {
-                entry["base_instructions"] = baseInstructions
-            }
-            if let modelMessages = template["model_messages"] {
-                entry["model_messages"] = modelMessages
-            }
+            entry["priority"] = 1000 + index
 
-            // Clear OpenAI-specific fields
+            // Clear OpenAI-specific fields so third-party providers don't
+            // inherit GPT-5.5 speed tiers, service tiers, or launch messaging
             entry["additional_speed_tiers"] = [] as [Any]
             entry["service_tiers"] = [] as [Any]
             entry["availability_nux"] = NSNull()
@@ -271,11 +271,29 @@ enum CodexConfigManager {
 
     private static func minimalTemplate() -> [String: Any] {
         return [
+            "slug": "gpt-5.5",
+            "display_name": "GPT-5.5",
+            "description": "Codex agent model",
             "base_instructions": "You are a helpful coding assistant.",
             "model_messages": [
                 "instructions_template": "You are a helpful coding assistant.",
                 "instructions_variables": [:] as [String: Any]
-            ] as [String: Any]
+            ] as [String: Any],
+            "supported_reasoning_levels": [
+                ["effort": "low", "description": "Fast responses for simple tasks"],
+                ["effort": "medium", "description": "Balanced speed and quality"],
+                ["effort": "high", "description": "Thorough reasoning for complex tasks"],
+                ["effort": "xhigh", "description": "Maximum reasoning depth"]
+            ] as [[String: Any]],
+            "default_reasoning_level": "medium",
+            "visibility": "list",
+            "supported_in_api": true,
+            "shell_type": "shell_command",
+            "priority": 0,
+            "additional_speed_tiers": [] as [Any],
+            "service_tiers": [] as [Any],
+            "availability_nux": NSNull(),
+            "upgrade": NSNull(),
         ]
     }
 
