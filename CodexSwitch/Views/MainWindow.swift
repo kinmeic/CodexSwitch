@@ -5,7 +5,6 @@ struct MainWindow: View {
 
     var body: some View {
         DetailView()
-            .navigationTitle("Codex Switch")
             .frame(minWidth: 700, minHeight: 450)
     }
 }

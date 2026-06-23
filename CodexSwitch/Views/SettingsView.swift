@@ -8,11 +8,12 @@ struct SettingsView: View {
             // Proxy
             Section("Proxy") {
                 HStack {
-                    Text("Port")
+                    Text("Port:")
                     Spacer()
-                    TextField("Port", value: $appState.proxyPort, format: .number)
+                    TextField("", value: $appState.proxyPort, format: .number.grouping(.never))
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 100)
+                        .multilineTextAlignment(.trailing)
                 }
 
                 Toggle("Auto-start on launch", isOn: $appState.autoStartProxy)
@@ -22,48 +23,67 @@ struct SettingsView: View {
             Section("Gateway Token") {
                 HStack {
                     Text(appState.gatewayToken)
-                        .font(.system(.caption, design: .monospaced))
+                        .font(.system(.body, design: .monospaced))
                         .textSelection(.enabled)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                     Spacer()
                     Button("Regenerate") {
                         appState.gatewayToken = "cs-\(UUID().uuidString.lowercased())"
                     }
+                    .buttonStyle(.borderless)
                 }
             }
 
             // Codex Config
             Section("Codex CLI") {
                 HStack {
-                    Text("Config Directory")
+                    Text("Config Directory:")
                     Spacer()
                     TextField("~/.codex", text: $appState.codexConfigPath)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 300)
+                        .multilineTextAlignment(.trailing)
                 }
 
                 Toggle("Preserve ChatGPT login", isOn: $appState.preserveOfficialAuth)
                     .help("When on, switching to a third-party provider authenticates via experimental_bearer_token in config.toml and leaves auth.json untouched, so your cached ChatGPT login survives switches.")
+                Text("Switching to a third-party provider authenticates via experimental_bearer_token in config.toml, leaving auth.json untouched so your cached ChatGPT login survives switches.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Toggle("Inject prompt cache key", isOn: $appState.injectPromptCacheKey)
                     .help("When on, injects a stable prompt_cache_key into upstream Responses-API requests that omit one, so OpenAI affinity-routes to a consistent backend and prefix caching hits across turns. Responses-only; Chat Completions upstreams are unaffected.")
+                Text("Injects a stable prompt_cache_key into upstream Responses-API requests so OpenAI affinity-routes to a consistent backend and prefix caching hits across turns. Responses-only; Chat Completions upstreams are unaffected.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             // Outbound Proxy
             Section("Outbound Proxy") {
                 HStack {
-                    Text("URL")
+                    Text("Address:")
                     Spacer()
-                    TextField("http://proxy:8080", text: $appState.outboundProxyURL)
+                    TextField("", text: $appState.outboundProxyURL)
                         .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 300)
+                        .font(.system(.body, design: .monospaced))
+                        .multilineTextAlignment(.trailing)
                 }
 
                 if let msg = appState.outboundProxyValidationMessage {
-                    Text(msg)
+                    Label(msg, systemImage: "exclamationmark.triangle")
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundColor(.orange)
                 }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Used by CodexSwitch outbound requests. Leave empty for direct connection.")
+                    Text(verbatim: "Examples: http://127.0.0.1:7890, socks5://127.0.0.1:1080")
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
         }
         .formStyle(.grouped)

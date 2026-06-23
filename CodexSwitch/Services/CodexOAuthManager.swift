@@ -76,6 +76,67 @@ final class CodexOAuthManager: ObservableObject {
         phase = .authenticated(account: account)
     }
 
+    /// Read a ChatGPT login directly from `~/.codex/auth.json` (the Codex CLI's
+    /// native login store) without persisting it to this app's Keychain. Used
+    /// to surface a login performed via `codex login` (or the official CLI) so
+    /// the ChatGPT tab shows the signed-in state regardless of how login was
+    /// done. Returns nil when there is no ChatGPT login (no file, or an
+    /// OPENAI_API_KEY-only file from third-party mode).
+    func accountFromAuthJSON() -> CodexOAuthAccount? {
+        let path = AppEnvironment.authJSONPath
+        guard let data = FileManager.default.contents(atPath: path),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        // A ChatGPT login is signalled by a `tokens` object; an
+        // OPENAI_API_KEY-only file (third-party mode) has none.
+        guard let tokens = json["tokens"] as? [String: Any],
+              let accessToken = tokens["access_token"] as? String, !accessToken.isEmpty else {
+            return nil
+        }
+        let refreshToken = (tokens["refresh_token"] as? String) ?? ""
+        let idToken = tokens["id_token"] as? String
+        let storedAccountId = (tokens["account_id"] as? String) ?? ""
+        let (parsedAccountId, email) = Self.extractIdentity(accessToken: accessToken, idToken: idToken)
+        let accountId = storedAccountId.isEmpty ? (parsedAccountId ?? "") : storedAccountId
+        guard !accountId.isEmpty else { return nil }
+
+        // Best-effort expiry: prefer the access_token JWT `exp`; otherwise infer
+        // from `last_refresh` so a recently-refreshed login reads as valid.
+        let expiresAt = Self.expFromJWT(accessToken)
+            ?? Self.dateFromLastRefresh(json["last_refresh"])
+            ?? Date()
+
+        return CodexOAuthAccount(
+            accountId: accountId,
+            email: email,
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            idToken: idToken,
+            expiresAt: expiresAt
+        )
+    }
+
+    /// Detect and surface a ChatGPT login from `auth.json` when no app-managed
+    /// (Keychain) account exists. Idempotent; does not persist to Keychain so
+    /// the app never takes over token refresh for a CLI-performed login.
+    func surfaceAuthJSONAccountIfPresent() {
+        guard phase == .idle, account == nil else { return }
+        guard let external = accountFromAuthJSON() else { return }
+        account = external
+        phase = .authenticated(account: external)
+        logger.info("Surfaced ChatGPT login from auth.json for account \(external.accountId)")
+    }
+
+    private static func dateFromLastRefresh(_ value: Any?) -> Date? {
+        guard let str = value as? String else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: str) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: str)
+    }
+
     // MARK: - Start device flow
 
     func startDeviceFlow() {
@@ -377,21 +438,38 @@ final class CodexOAuthManager: ObservableObject {
     }
 
     private static func parseClaims(_ jwt: String) -> (accountId: String?, email: String?) {
+        guard let claims = jwtClaims(jwt) else { return (nil, nil) }
+        let accountId = (claims["chatgpt_account_id"] as? String)
+            ?? ((claims["https://api.openai.com/auth"] as? [String: Any])?["chatgpt_account_id"] as? String)
+            ?? ((claims["organizations"] as? [[String: Any]])?.first?["id"] as? String)
+        let email = claims["email"] as? String
+        return (accountId, email)
+    }
+
+    /// Decode the payload of a JWT (base64url) into its claims, or nil if the
+    /// token is malformed. Shared by identity extraction and expiry parsing.
+    private static func jwtClaims(_ jwt: String) -> [String: Any]? {
         let parts = jwt.split(separator: ".")
-        guard parts.count >= 2 else { return (nil, nil) }
+        guard parts.count >= 2 else { return nil }
         var payload = String(parts[1])
         // base64url → base64, pad
         payload = payload.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         while payload.count % 4 != 0 { payload.append("=") }
         guard let data = Data(base64Encoded: payload),
               let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return (nil, nil)
+            return nil
         }
-        let accountId = (claims["chatgpt_account_id"] as? String)
-            ?? ((claims["https://api.openai.com/auth"] as? [String: Any])?["chatgpt_account_id"] as? String)
-            ?? ((claims["organizations"] as? [[String: Any]])?.first?["id"] as? String)
-        let email = claims["email"] as? String
-        return (accountId, email)
+        return claims
+    }
+
+    /// Best-effort `exp` (expiry) extraction from a JWT. Accepts numeric or
+    /// string-encoded epoch seconds.
+    private static func expFromJWT(_ jwt: String) -> Date? {
+        guard let claims = jwtClaims(jwt) else { return nil }
+        if let exp = claims["exp"] as? Double { return Date(timeIntervalSince1970: exp) }
+        if let exp = claims["exp"] as? Int { return Date(timeIntervalSince1970: TimeInterval(exp)) }
+        if let exp = claims["exp"] as? String, let seconds = Double(exp) { return Date(timeIntervalSince1970: seconds) }
+        return nil
     }
 
     // MARK: - Keychain persistence

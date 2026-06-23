@@ -9,6 +9,7 @@ private let logger = Logger(subsystem: "com.codex.switch", category: "proxy")
 struct HTTPRequest {
     let method: String
     let path: String
+    /// Headers with their original casing preserved from the wire format.
     let headers: [(String, String)]
     let body: Data
 
@@ -44,13 +45,14 @@ final class ProxyServer {
     private let queue = DispatchQueue(label: "com.codex.switch.proxy", qos: .userInitiated)
     private var gatewayToken: String = ""
     private var activeProvider: CodexProvider?
-    /// Whether to inject a stable prompt_cache_key into upstream Responses
+    /// Whether to inject a stable `prompt_cache_key` into upstream Responses
     /// requests when the client omits one. Synced from AppState settings.
     var injectPromptCacheKey: Bool = false
     private let maxRequestBodyBytes = 10 * 1024 * 1024
 
     let protocolConverter = ProtocolConverter()
     let historyStore = ChatHistoryStore()
+    let circuitBreakerRegistry = CircuitBreakerRegistry()
 
     @Published var running = false
     @Published var port: Int = AppEnvironment.defaultPort
@@ -216,6 +218,15 @@ final class ProxyServer {
             return
         }
 
+        // Circuit breaker: check if the provider is available
+        if !circuitBreakerRegistry.allowRequest(providerId: provider.id) {
+            let cb = circuitBreakerRegistry.breaker(for: provider.id)
+            let msg = "Provider circuit is open (\(cb.consecutiveFailures) consecutive failures)"
+            recordRequest(method: request.method, path: request.path, providerName: provider.name, status: 503, startedAt: startedAt, error: msg)
+            sendResponse(connection: connection, status: 503, body: errorBody(msg))
+            return
+        }
+
         let isStreaming = (try? JSONSerialization.jsonObject(with: request.body) as? [String: Any])
             .flatMap { $0["stream"] as? Bool } ?? false
 
@@ -260,7 +271,8 @@ final class ProxyServer {
         startedAt: Date
     ) {
         guard let urlRequest = makeUpstreamRequest(provider: provider, path: "/v1/responses",
-                                                   body: body, isStreaming: isStreaming) else {
+                                                   body: body, isStreaming: isStreaming,
+                                                   originalHeaders: originalRequest.headers) else {
             recordRequest(method: originalRequest.method, path: originalRequest.path,
                          providerName: provider.name, status: 502, startedAt: startedAt,
                          error: "Invalid upstream URL")
@@ -277,15 +289,34 @@ final class ProxyServer {
         }
     }
 
-    private func makeUpstreamRequest(provider: CodexProvider, path: String, body: Data, isStreaming: Bool) -> URLRequest? {
+    private func makeUpstreamRequest(provider: CodexProvider, path: String, body: Data,
+                                     isStreaming: Bool, originalHeaders: [(String, String)]? = nil) -> URLRequest? {
         guard let url = URL(string: provider.baseURL + path) else { return nil }
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.httpBody = body
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer \(provider.apiKey)", forHTTPHeaderField: "Authorization")
         urlRequest.timeoutInterval = 300
+
+        // Header Case Preservation: replay original header casing from the
+        // Codex CLI request, so proxied requests are wire-identical to direct
+        // ones and defeat header-based fingerprinting.
+        if let originalHeaders = originalHeaders {
+            for (name, value) in originalHeaders {
+                let lower = name.lowercased()
+                // Skip hop-by-hop and host headers
+                if lower == "host" || lower == "connection" || lower == "content-length" || lower == "transfer-encoding" {
+                    continue
+                }
+                urlRequest.setValue(value, forHTTPHeaderField: name)
+            }
+            // Ensure essential headers are set with proper casing
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            urlRequest.setValue("Bearer \(provider.apiKey)", forHTTPHeaderField: "Authorization")
+        } else {
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            urlRequest.setValue("Bearer \(provider.apiKey)", forHTTPHeaderField: "Authorization")
+        }
 
         if isStreaming {
             urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -306,6 +337,7 @@ final class ProxyServer {
 
             if let error {
                 let msg = "Upstream error: \(error.localizedDescription)"
+                self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: msg)
                 self.recordRequest(method: originalRequest.method, path: originalRequest.path,
                                  providerName: provider.name, status: 502, startedAt: startedAt, error: msg)
                 self.sendResponse(connection: connection, status: 502, body: self.errorBody(msg))
@@ -315,6 +347,12 @@ final class ProxyServer {
             let httpResponse = response as? HTTPURLResponse
             let status = httpResponse?.statusCode ?? 502
             let body = data ?? Data()
+
+            if status >= 500 {
+                self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: "HTTP \(status)")
+            } else if status >= 200 && status < 400 {
+                self.circuitBreakerRegistry.recordSuccess(providerId: provider.id)
+            }
 
             if status >= 400 {
                 self.recordRequest(method: originalRequest.method, path: originalRequest.path,
@@ -350,12 +388,17 @@ final class ProxyServer {
                     for try await byte in bytes {
                         body.append(byte)
                     }
+                    if status >= 500 {
+                        self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: "HTTP \(status)")
+                    }
                     self.recordRequest(method: originalRequest.method, path: originalRequest.path,
                                      providerName: provider.name, status: status, startedAt: startedAt,
                                      error: "Upstream returned HTTP \(status)")
                     self.sendResponse(connection: connection, status: status, body: body, contentType: "application/json")
                     return
                 }
+
+                self.circuitBreakerRegistry.recordSuccess(providerId: provider.id)
 
                 let header = "HTTP/1.1 \(status) \(self.statusText(for: status))\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n"
                 try await self.sendContent(Data(header.utf8), connection: connection)
@@ -377,6 +420,7 @@ final class ProxyServer {
                 connection.cancel()
             } catch {
                 let msg = "Upstream error: \(error.localizedDescription)"
+                self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: msg)
                 self.recordRequest(method: originalRequest.method, path: originalRequest.path,
                                  providerName: provider.name, status: 502, startedAt: startedAt, error: msg)
                 self.sendResponse(connection: connection, status: 502, body: self.errorBody(msg))
@@ -405,8 +449,12 @@ final class ProxyServer {
         // Enrich with history
         responsesRequest = historyStore.enrichWithHistory(responsesRequest)
 
+        // Build CodexToolContext from the request tools and input
+        let tools = responsesRequest["tools"] as? [[String: Any]] ?? []
+        let input = responsesRequest["input"] as? [[String: Any]]
+        var toolContext = CodexToolContext.buildFromRequest(tools: tools, input: input)
+
         // Convert Responses -> Chat Completions
-        var toolContext = ToolNameContext()
         var chatRequest = protocolConverter.responsesToChatCompletions(
             body: responsesRequest,
             reasoningConfig: provider.effectiveReasoning,
@@ -419,6 +467,16 @@ final class ProxyServer {
             chatRequest["model"] = catalogModel.model
         }
 
+        // Pre-emptive media sanitization for known text-only models
+        let modelName = chatRequest["model"] as? String ?? ""
+        if let chatBody = try? JSONSerialization.data(withJSONObject: chatRequest) {
+            let sanitized = RequestRectifier.sanitizeForTextOnlyModel(chatBody, modelName: modelName)
+            if sanitized != chatBody,
+               let sanitizedJson = try? JSONSerialization.jsonObject(with: sanitized) as? [String: Any] {
+                chatRequest = sanitizedJson
+            }
+        }
+
         guard let requestBody = try? JSONSerialization.data(withJSONObject: chatRequest) else {
             recordRequest(method: originalRequest.method, path: originalRequest.path,
                          providerName: provider.name, status: 500, startedAt: startedAt,
@@ -429,7 +487,8 @@ final class ProxyServer {
         }
 
         guard let urlRequest = makeUpstreamRequest(provider: provider, path: "/v1/chat/completions",
-                                                   body: requestBody, isStreaming: isStreaming) else {
+                                                   body: requestBody, isStreaming: isStreaming,
+                                                   originalHeaders: originalRequest.headers) else {
             recordRequest(method: originalRequest.method, path: originalRequest.path,
                          providerName: provider.name, status: 502, startedAt: startedAt,
                          error: "Invalid upstream URL")
@@ -444,7 +503,8 @@ final class ProxyServer {
         } else {
             simpleForwardWithConversion(request: urlRequest, provider: provider,
                                       connection: connection, originalRequest: originalRequest,
-                                      startedAt: startedAt, toolContext: toolContext)
+                                      startedAt: startedAt, toolContext: toolContext,
+                                      originalBody: body)
         }
     }
 
@@ -454,13 +514,15 @@ final class ProxyServer {
         connection: NWConnection,
         originalRequest: HTTPRequest,
         startedAt: Date,
-        toolContext: ToolNameContext
+        toolContext: CodexToolContext,
+        originalBody: Data
     ) {
         let task = NetworkSessionManager.shared.session.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
 
             if let error {
                 let msg = "Upstream error: \(error.localizedDescription)"
+                self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: msg)
                 self.recordRequest(method: originalRequest.method, path: originalRequest.path,
                                  providerName: provider.name, status: 502, startedAt: startedAt, error: msg)
                 self.sendResponse(connection: connection, status: 502, body: self.errorBody(msg))
@@ -470,6 +532,35 @@ final class ProxyServer {
             let httpResponse = response as? HTTPURLResponse
             let status = httpResponse?.statusCode ?? 502
             let body = data ?? Data()
+
+            // Request Rectifier: check if this is a media rejection error and retry
+            let rectification = RequestRectifier.rectifyMediaError(
+                requestBody: originalBody,
+                httpStatus: status,
+                responseBody: body
+            )
+            if case .rectified(let sanitizedBody) = rectification {
+                logger.info("Media rectifier triggered — retrying with sanitized request")
+                // Rebuild the converted request with sanitized body
+                if let sanitizedJSON = try? JSONSerialization.jsonObject(with: sanitizedBody) as? [String: Any] {
+                    var sanitizedRequest = request
+                    sanitizedRequest.httpBody = sanitizedBody
+                    // Re-convert and retry once
+                    self.simpleForwardWithConversion(request: sanitizedRequest, provider: provider,
+                                                   connection: connection, originalRequest: originalRequest,
+                                                   startedAt: startedAt, toolContext: toolContext,
+                                                   originalBody: sanitizedBody)
+                    return
+                }
+            }
+
+            // Circuit breaker: record outcome
+            if status >= 500 {
+                self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: "HTTP \(status)")
+            } else if status >= 200 && status < 400 {
+                self.circuitBreakerRegistry.recordSuccess(providerId: provider.id)
+            }
+            // 4xx errors don't affect circuit breaker (client fault, not provider fault)
 
             if status >= 400 {
                 // Try to convert Chat Completions error to Responses error
@@ -485,6 +576,27 @@ final class ProxyServer {
                                  error: "Upstream returned HTTP \(status)")
                 self.sendResponse(connection: connection, status: status, body: errorBody, contentType: "application/json")
                 return
+            }
+
+            // SSE Aggregation Fallback: if upstream returned Content-Type: application/json
+            // but the body looks like SSE, aggregate it into a single response
+            let contentType = httpResponse?.value(forHTTPHeaderField: "Content-Type") ?? ""
+            if !contentType.contains("text/event-stream") && isSSEBody(body) {
+                let aggregatedBody = aggregateSSEResponse(body)
+                if let json = try? JSONSerialization.jsonObject(with: aggregatedBody) as? [String: Any] {
+                    let responsesResponse = self.protocolConverter.chatCompletionToResponse(
+                        body: json,
+                        reasoningConfig: provider.effectiveReasoning,
+                        toolContext: toolContext
+                    )
+                    self.historyStore.cacheFromResponse(responsesResponse)
+                    if let responseBody = try? JSONSerialization.data(withJSONObject: responsesResponse) {
+                        self.recordRequest(method: originalRequest.method, path: originalRequest.path,
+                                         providerName: provider.name, status: status, startedAt: startedAt)
+                        self.sendResponse(connection: connection, status: status, body: responseBody, contentType: "application/json")
+                        return
+                    }
+                }
             }
 
             guard let chatCompletion = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
@@ -526,7 +638,7 @@ final class ProxyServer {
         connection: NWConnection,
         originalRequest: HTTPRequest,
         startedAt: Date,
-        toolContext: ToolNameContext
+        toolContext: CodexToolContext
     ) {
         let streamingConverter = StreamingConverter(
             provider: provider,
@@ -548,12 +660,17 @@ final class ProxyServer {
                     for try await byte in bytes {
                         body.append(byte)
                     }
+                    if status >= 500 {
+                        self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: "HTTP \(status)")
+                    }
                     self.recordRequest(method: originalRequest.method, path: originalRequest.path,
                                      providerName: provider.name, status: status, startedAt: startedAt,
                                      error: "Upstream returned HTTP \(status)")
                     self.sendResponse(connection: connection, status: status, body: body, contentType: "application/json")
                     return
                 }
+
+                self.circuitBreakerRegistry.recordSuccess(providerId: provider.id)
 
                 // Send SSE header
                 let header = "HTTP/1.1 \(status) \(self.statusText(for: status))\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n"
@@ -571,11 +688,92 @@ final class ProxyServer {
                 connection.cancel()
             } catch {
                 let msg = "Upstream error: \(error.localizedDescription)"
+                self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: msg)
                 self.recordRequest(method: originalRequest.method, path: originalRequest.path,
                                  providerName: provider.name, status: 502, startedAt: startedAt, error: msg)
                 self.sendResponse(connection: connection, status: 502, body: self.errorBody(msg))
             }
         }
+    }
+
+    // MARK: - SSE Aggregation Fallback
+
+    /// Detect if a response body that was labeled as `application/json` actually
+    /// contains SSE-formatted data (lines starting with `data: `).
+    private func isSSEBody(_ body: Data) -> Bool {
+        guard let text = String(data: body, encoding: .utf8) else { return false }
+        let lines = text.split(separator: "\n", maxSplits: 10)
+        return lines.contains { $0.hasPrefix("data: ") }
+    }
+
+    /// Aggregate SSE chunks into a single Chat Completions JSON response.
+    /// Merges content deltas, reasoning_content, and tool_calls.
+    private func aggregateSSEResponse(_ body: Data) -> Data {
+        guard let text = String(data: body, encoding: .utf8) else { return body }
+
+        var fullContent = ""
+        var fullReasoning = ""
+        var toolCallDeltas: [(index: Int, id: String, name: String, arguments: String)] = []
+        var model = ""
+        var finishReason = ""
+        var usage: [String: Any] = [:]
+
+        for line in text.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("data: ") else { continue }
+            let eventData = String(trimmed.dropFirst(6))
+            if eventData == "[DONE]" { break }
+
+            guard let data = eventData.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let choice = choices.first,
+                  let delta = choice["delta"] as? [String: Any] else { continue }
+
+            if let m = json["model"] as? String { model = m }
+            if let fr = choice["finish_reason"] as? String { finishReason = fr }
+            if let u = json["usage"] as? [String: Any] { usage = u }
+
+            if let content = delta["content"] as? String { fullContent += content }
+            if let reasoning = delta["reasoning_content"] as? String { fullReasoning += reasoning }
+
+            if let calls = delta["tool_calls"] as? [[String: Any]] {
+                for call in calls {
+                    let idx = call["index"] as? Int ?? 0
+                    while toolCallDeltas.count <= idx {
+                        toolCallDeltas.append((index: toolCallDeltas.count, id: "", name: "", arguments: ""))
+                    }
+                    if let id = call["id"] as? String { toolCallDeltas[idx].id = id }
+                    if let name = (call["function"] as? [String: Any])?["name"] as? String {
+                        toolCallDeltas[idx].name = name
+                    }
+                    if let args = (call["function"] as? [String: Any])?["arguments"] as? String {
+                        toolCallDeltas[idx].arguments += args
+                    }
+                }
+            }
+        }
+
+        // Reconstruct as a single Chat Completions response
+        var message: [String: Any] = ["role": "assistant", "content": fullContent]
+        if !fullReasoning.isEmpty { message["reasoning_content"] = fullReasoning }
+        if !toolCallDeltas.isEmpty {
+            message["tool_calls"] = toolCallDeltas.map { call -> [String: Any] in
+                return [
+                    "id": call.id,
+                    "type": "function",
+                    "function": ["name": call.name, "arguments": call.arguments]
+                ]
+            }
+        }
+
+        var result: [String: Any] = [
+            "choices": [["index": 0, "message": message, "finish_reason": finishReason]]
+        ]
+        if !model.isEmpty { result["model"] = model }
+        if !usage.isEmpty { result["usage"] = usage }
+
+        return (try? JSONSerialization.data(withJSONObject: result)) ?? body
     }
 
     // MARK: - Auth

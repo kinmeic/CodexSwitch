@@ -158,6 +158,8 @@ final class AppState: ObservableObject {
         if activeProviderId == provider.id {
             activeProviderId = nil
         }
+        // Clean up circuit breaker for the removed provider
+        proxyServer.circuitBreakerRegistry.remove(providerId: provider.id)
     }
 
     func updateProvider(_ provider: CodexProvider) {
@@ -434,7 +436,18 @@ final class AppState: ObservableObject {
             endpoint = "/v1/responses"
         }
 
-        guard let url = URL(string: provider.baseURL + endpoint) else {
+        // Normalize baseURL: strip trailing /v1 or /v1/ to avoid double /v1/v1/
+        var baseURL = provider.baseURL
+        if baseURL.hasSuffix("/v1") {
+            baseURL = String(baseURL.dropLast(3))
+        } else if baseURL.hasSuffix("/v1/") {
+            baseURL = String(baseURL.dropLast(4))
+        }
+        if baseURL.hasSuffix("/") {
+            baseURL = String(baseURL.dropLast())
+        }
+
+        guard let url = URL(string: baseURL + endpoint) else {
             completion(.failure(NSError(domain: "test", code: -1,
                 userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
             return

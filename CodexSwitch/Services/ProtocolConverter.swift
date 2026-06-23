@@ -1,39 +1,5 @@
 import Foundation
 
-/// Tracks the mapping between flattened Chat Completions tool names and the
-/// original Responses API names. Responses API tools may carry namespaced
-/// identifiers (e.g. `custom__namespace__toolName`) that some upstreams reject;
-/// the converter flattens them on the request side and restores them on the
-/// response side so Codex sees the original names.
-struct ToolNameContext {
-    private var flattenedToOriginal: [String: String] = [:]
-
-    /// Record a tool: returns the (possibly flattened) name to send upstream,
-    /// and remembers how to restore it.
-    mutating func register(_ originalName: String) -> String {
-        let flattened = ToolNameContext.flatten(originalName)
-        if flattened != originalName {
-            flattenedToOriginal[flattened] = originalName
-        }
-        return flattened
-    }
-
-    /// Restore an upstream tool name back to its original Responses form.
-    func restore(_ flattenedName: String) -> String {
-        flattenedToOriginal[flattenedName] ?? flattenedName
-    }
-
-    /// Flatten a namespaced Responses tool name to a plain identifier.
-    /// `custom__ns__toolName` → `toolName`. Names without `__` are unchanged.
-    static func flatten(_ name: String) -> String {
-        let parts = name.components(separatedBy: "__")
-        if let last = parts.last, !last.isEmpty {
-            return last
-        }
-        return name
-    }
-}
-
 final class ProtocolConverter {
 
     // MARK: - Request Conversion: Responses -> Chat Completions
@@ -41,7 +7,7 @@ final class ProtocolConverter {
     func responsesToChatCompletions(
         body: [String: Any],
         reasoningConfig: CodexChatReasoning?,
-        toolContext: inout ToolNameContext
+        toolContext: inout CodexToolContext
     ) -> [String: Any] {
         var result: [String: Any] = [:]
 
@@ -56,7 +22,7 @@ final class ProtocolConverter {
 
         // Map input[] -> messages[]
         if let input = body["input"] as? [[String: Any]] {
-            let inputMessages = convertInputToMessages(input)
+            let inputMessages = convertInputToMessages(input, toolContext: &toolContext)
             messages.append(contentsOf: inputMessages)
         } else if let input = body["input"] as? String {
             messages.append(["role": "user", "content": input])
@@ -95,11 +61,9 @@ final class ProtocolConverter {
             }
         }
 
-        // Map tools — flatten namespaced tool names so upstreams that reject
-        // `__` (vLLM, enterprise gateways) accept them. Original names are
-        // recorded in toolContext for response-side restoration.
+        // Map tools — dispatch on type to handle all four Responses tool kinds
         if let tools = body["tools"] as? [[String: Any]] {
-            let chatTools = tools.compactMap { convertTool($0, toolContext: &toolContext) }
+            let chatTools = convertAllTools(tools, toolContext: &toolContext)
             if !chatTools.isEmpty {
                 result["tools"] = chatTools
             }
@@ -113,39 +77,41 @@ final class ProtocolConverter {
         return result
     }
 
-    private func convertTool(_ tool: [String: Any], toolContext: inout ToolNameContext) -> [String: Any]? {
-        guard let type = tool["type"] as? String, type == "function" else { return nil }
+    // MARK: - Tool Conversion (all four kinds)
 
-        if let function = tool["function"] as? [String: Any] {
-            var flattenedFunction = function
-            if let name = function["name"] as? String {
-                flattenedFunction["name"] = toolContext.register(name)
+    private func convertAllTools(_ tools: [[String: Any]], toolContext: inout CodexToolContext) -> [[String: Any]] {
+        var result: [[String: Any]] = []
+        for tool in tools {
+            let type = tool["type"] as? String ?? ""
+            switch type {
+            case "function":
+                if let converted = toolContext.addFunctionTool(tool) {
+                    result.append(converted)
+                }
+            case "namespace":
+                let children = toolContext.addNamespaceTool(tool)
+                result.append(contentsOf: children)
+            case "custom":
+                if let wrapped = toolContext.addCustomTool(tool) {
+                    result.append(wrapped)
+                }
+            case "tool_search":
+                let synthetic = toolContext.addToolSearchTool()
+                result.append(synthetic)
+            default:
+                // Bare string tool or unknown type — treat as custom
+                if tool.count == 1, let name = tool["name"] as? String {
+                    let wrapped = toolContext.addCustomTool(["type": "custom", "name": name])
+                    if let w = wrapped { result.append(w) }
+                }
             }
-            return [
-                "type": "function",
-                "function": flattenedFunction
-            ]
         }
-
-        // Responses API format: tool with name, parameters
-        if let name = tool["name"] as? String {
-            var function: [String: Any] = ["name": toolContext.register(name)]
-            if let parameters = tool["parameters"] {
-                function["parameters"] = parameters
-            }
-            if let description = tool["description"] as? String {
-                function["description"] = description
-            }
-            return [
-                "type": "function",
-                "function": function
-            ]
-        }
-
-        return nil
+        return result
     }
 
-    private func convertInputToMessages(_ input: [[String: Any]]) -> [[String: Any]] {
+    // MARK: - Input Conversion
+
+    private func convertInputToMessages(_ input: [[String: Any]], toolContext: inout CodexToolContext) -> [[String: Any]] {
         var messages: [[String: Any]] = []
         var pendingToolCalls: [[String: Any]] = []
 
@@ -192,11 +158,61 @@ final class ProtocolConverter {
                 if let callId = item["call_id"] as? String,
                    let name = item["name"] as? String,
                    let arguments = item["arguments"] as? String {
+                    // For namespace tools, use the flattened chat name
+                    let chatName: String
+                    if let ns = item["namespace"] as? String {
+                        chatName = "\(ns)__\(name)"
+                    } else {
+                        chatName = name
+                    }
+                    pendingToolCalls.append([
+                        "id": callId,
+                        "type": "function",
+                        "function": [
+                            "name": chatName,
+                            "arguments": arguments
+                        ]
+                    ])
+                }
+
+            case "custom_tool_call":
+                // Custom tool calls: extract raw input and send as JSON arguments
+                if let callId = item["call_id"] as? String,
+                   let name = item["name"] as? String {
+                    let inputStr = item["input"] as? String ?? ""
+                    let arguments: String
+                    if let data = try? JSONSerialization.data(withJSONObject: ["input": inputStr]),
+                       let json = String(data: data, encoding: .utf8) {
+                        arguments = json
+                    } else {
+                        arguments = "{\"input\":\"\(inputStr.replacingOccurrences(of: "\"", with: "\\\""))\"}"
+                    }
                     pendingToolCalls.append([
                         "id": callId,
                         "type": "function",
                         "function": [
                             "name": name,
+                            "arguments": arguments
+                        ]
+                    ])
+                }
+
+            case "tool_search_call":
+                // Tool search calls: forward as function call with JSON arguments
+                if let callId = item["call_id"] as? String {
+                    let args = item["arguments"] as? [String: Any] ?? [:]
+                    let arguments: String
+                    if let data = try? JSONSerialization.data(withJSONObject: args),
+                       let json = String(data: data, encoding: .utf8) {
+                        arguments = json
+                    } else {
+                        arguments = "{}"
+                    }
+                    pendingToolCalls.append([
+                        "id": callId,
+                        "type": "function",
+                        "function": [
+                            "name": "tool_search",
                             "arguments": arguments
                         ]
                     ])
@@ -220,6 +236,19 @@ final class ProtocolConverter {
                         "content": output
                     ])
                 }
+
+            case "tool_search_output":
+                // Flush pending tool calls
+                if !pendingToolCalls.isEmpty {
+                    var assistantMsg: [String: Any] = ["role": "assistant"]
+                    assistantMsg["tool_calls"] = pendingToolCalls
+                    assistantMsg["content"] = ""
+                    messages.append(assistantMsg)
+                    pendingToolCalls = []
+                }
+
+                // tool_search_output is consumed by CodexToolContext.buildFromRequest
+                // to register dynamically loaded tools. We don't forward it as a message.
 
             case "reasoning":
                 // Attach reasoning to preceding assistant message
@@ -330,7 +359,7 @@ final class ProtocolConverter {
     func chatCompletionToResponse(
         body: [String: Any],
         reasoningConfig: CodexChatReasoning?,
-        toolContext: ToolNameContext = ToolNameContext()
+        toolContext: CodexToolContext = CodexToolContext()
     ) -> [String: Any] {
         var result: [String: Any] = [:]
 
@@ -390,21 +419,62 @@ final class ProtocolConverter {
             ])
         }
 
-        // Extract tool calls — restore original Responses tool names
+        // Extract tool calls — restore original Responses tool format based on kind
         if let toolCalls = message["tool_calls"] as? [[String: Any]] {
             for call in toolCalls {
                 if let id = call["id"] as? String,
                    let function = call["function"] as? [String: Any],
-                   let name = function["name"] as? String,
+                   let chatName = function["name"] as? String,
                    let arguments = function["arguments"] as? String {
-                    output.append([
-                        "type": "function_call",
-                        "id": "fc_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))",
-                        "call_id": id,
-                        "name": toolContext.restore(name),
-                        "arguments": arguments,
-                        "status": "completed"
-                    ])
+
+                    let spec = toolContext.spec(forChatName: chatName)
+
+                    if spec?.kind == .custom {
+                        // Custom tool: extract "input" from JSON arguments, emit custom_tool_call
+                        let inputStr = extractCustomToolInput(arguments)
+                        output.append([
+                            "type": "custom_tool_call",
+                            "id": "ctc_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))",
+                            "call_id": id,
+                            "name": chatName,
+                            "input": inputStr,
+                            "status": "completed"
+                        ])
+                    } else if spec?.kind == .toolSearch {
+                        // Tool search: parse arguments as JSON object, emit tool_search_call
+                        let argsObj = parseToolArguments(arguments)
+                        output.append([
+                            "type": "tool_search_call",
+                            "id": "tsc_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))",
+                            "call_id": id,
+                            "name": "tool_search",
+                            "arguments": argsObj,
+                            "execution": "client",
+                            "status": "completed"
+                        ])
+                    } else if let ns = spec?.namespace {
+                        // Namespace tool: restore original name + namespace
+                        output.append([
+                            "type": "function_call",
+                            "id": "fc_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))",
+                            "call_id": id,
+                            "name": spec?.originalName ?? chatName,
+                            "namespace": ns,
+                            "arguments": arguments,
+                            "status": "completed"
+                        ])
+                    } else {
+                        // Plain function: restore original name
+                        let originalName = toolContext.restoreOriginalName(chatName)
+                        output.append([
+                            "type": "function_call",
+                            "id": "fc_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))",
+                            "call_id": id,
+                            "name": originalName,
+                            "arguments": arguments,
+                            "status": "completed"
+                        ])
+                    }
                 }
             }
         }
@@ -427,6 +497,27 @@ final class ProtocolConverter {
         }
 
         return result
+    }
+
+    // MARK: - Custom Tool Helpers
+
+    /// Extract the "input" field from a JSON-encoded arguments string.
+    private func extractCustomToolInput(_ arguments: String) -> String {
+        guard let data = arguments.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let input = json["input"] as? String else {
+            return arguments
+        }
+        return input
+    }
+
+    /// Parse a JSON arguments string into a dictionary.
+    private func parseToolArguments(_ arguments: String) -> [String: Any] {
+        guard let data = arguments.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return [:]
+        }
+        return json
     }
 
     private func extractReasoning(from message: [String: Any], config: CodexChatReasoning?) -> String {

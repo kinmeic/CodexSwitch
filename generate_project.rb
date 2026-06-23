@@ -21,6 +21,9 @@ swift_files = {
   "ChatHistoryStore" => "CodexSwitch/Services/ChatHistoryStore.swift",
   "CodexOAuthManager" => "CodexSwitch/Services/CodexOAuthManager.swift",
   "PresetProviders" => "CodexSwitch/Services/PresetProviders.swift",
+  "CodexToolContext" => "CodexSwitch/Services/CodexToolContext.swift",
+  "CircuitBreaker" => "CodexSwitch/Services/CircuitBreaker.swift",
+  "RequestRectifier" => "CodexSwitch/Services/RequestRectifier.swift",
   "MainWindow" => "CodexSwitch/Views/MainWindow.swift",
   "MenuBarMenu" => "CodexSwitch/Views/MenuBarMenu.swift",
   "DetailView" => "CodexSwitch/Views/DetailView.swift",
@@ -108,7 +111,7 @@ groups_section += "		#{group_viewmodels} /* ViewModels */ = {\n			isa = PBXGroup
 groups_section += "		#{group_views} /* Views */ = {\n			isa = PBXGroup;\n			children = (\n				#{file_refs["MainWindow"]} /* MainWindow.swift */,\n				#{file_refs["MenuBarMenu"]} /* MenuBarMenu.swift */,\n				#{file_refs["DetailView"]} /* DetailView.swift */,\n				#{file_refs["ConnectionStatusView"]} /* ConnectionStatusView.swift */,\n				#{file_refs["ProviderListView"]} /* ProviderListView.swift */,\n				#{file_refs["OAuthLoginView"]} /* OAuthLoginView.swift */,\n				#{file_refs["SettingsView"]} /* SettingsView.swift */,\n			);\n			path = Views;\n			sourceTree = \"<group>\";\n		};\n"
 
 # Services group
-groups_section += "		#{group_services} /* Services */ = {\n			isa = PBXGroup;\n			children = (\n				#{file_refs["ProxyServer"]} /* ProxyServer.swift */,\n				#{file_refs["CodexConfigManager"]} /* CodexConfigManager.swift */,\n				#{file_refs["ProtocolConverter"]} /* ProtocolConverter.swift */,\n				#{file_refs["StreamingConverter"]} /* StreamingConverter.swift */,\n				#{file_refs["InlineThinkSplitter"]} /* InlineThinkSplitter.swift */,\n				#{file_refs["ChatHistoryStore"]} /* ChatHistoryStore.swift */,\n				#{file_refs["CodexOAuthManager"]} /* CodexOAuthManager.swift */,\n				#{file_refs["PresetProviders"]} /* PresetProviders.swift */,\n			);\n			path = Services;\n			sourceTree = \"<group>\";\n		};\n"
+groups_section += "		#{group_services} /* Services */ = {\n			isa = PBXGroup;\n			children = (\n				#{file_refs["ProxyServer"]} /* ProxyServer.swift */,\n				#{file_refs["CodexConfigManager"]} /* CodexConfigManager.swift */,\n				#{file_refs["ProtocolConverter"]} /* ProtocolConverter.swift */,\n				#{file_refs["StreamingConverter"]} /* StreamingConverter.swift */,\n				#{file_refs["InlineThinkSplitter"]} /* InlineThinkSplitter.swift */,\n				#{file_refs["ChatHistoryStore"]} /* ChatHistoryStore.swift */,\n				#{file_refs["CodexOAuthManager"]} /* CodexOAuthManager.swift */,\n				#{file_refs["PresetProviders"]} /* PresetProviders.swift */,\n				#{file_refs["CodexToolContext"]} /* CodexToolContext.swift */,\n				#{file_refs["CircuitBreaker"]} /* CircuitBreaker.swift */,\n				#{file_refs["RequestRectifier"]} /* RequestRectifier.swift */,\n			);\n			path = Services;\n			sourceTree = \"<group>\";\n		};\n"
 
 # Source group (main)
 groups_section += "		#{group_source} /* CodexSwitch */ = {\n			isa = PBXGroup;\n			children = (\n				#{file_refs["CodexSwitchApp"]} /* CodexSwitchApp.swift */,\n				#{file_refs["AppEnvironment"]} /* AppEnvironment.swift */,\n				#{group_models} /* Models */,\n				#{group_viewmodels} /* ViewModels */,\n				#{group_views} /* Views */,\n				#{group_services} /* Services */,\n				#{file_refs["Assets"]} /* Assets.xcassets */,\n				#{file_refs["Info.plist"]} /* Info.plist */,\n				#{file_refs["Entitlements"]} /* CodexSwitch.entitlements */,\n			);\n			path = CodexSwitch;\n			sourceTree = \"<group>\";\n		};\n"
@@ -201,7 +204,7 @@ target_settings = {
   "INFOPLIST_KEY_NSHumanReadableCopyright" => "",
   "LD_RUNPATH_SEARCH_PATHS" => ["$(inherited)", "@executable_path/../Frameworks"],
   "MACOSX_DEPLOYMENT_TARGET" => "13.0",
-  "MARKETING_VERSION" => "1.3.0",
+  "MARKETING_VERSION" => "1.4.0",
   "PRODUCT_BUNDLE_IDENTIFIER" => "com.codex.switch",
   "PRODUCT_NAME" => "$(TARGET_NAME)",
   "SWIFT_EMIT_LOC_STRINGS" => "YES",

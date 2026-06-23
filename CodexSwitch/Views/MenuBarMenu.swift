@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarMenu: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack {
@@ -45,7 +46,8 @@ struct MenuBarMenu: View {
 
             // Show Window
             Button("Show Window") {
-                showMainWindow()
+                openWindow(id: "main")
+                NSApp.activate(ignoringOtherApps: true)
             }
 
             Divider()
@@ -55,15 +57,6 @@ struct MenuBarMenu: View {
                 appState.requestQuit()
             }
             .keyboardShortcut("q", modifiers: .command)
-        }
-    }
-
-    private func showMainWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-        if let window = NSApp.windows.first(where: { $0.title == "Codex Switch" }) {
-            window.makeKeyAndOrderFront(nil)
-        } else if let window = NSApp.windows.first {
-            window.makeKeyAndOrderFront(nil)
         }
     }
 }

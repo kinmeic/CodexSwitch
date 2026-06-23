@@ -3,6 +3,10 @@ import SwiftUI
 struct ConnectionStatusView: View {
     @EnvironmentObject private var appState: AppState
 
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+    }
+
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
@@ -36,13 +40,13 @@ struct ConnectionStatusView: View {
                     }
 
                     HStack {
-                        Text("http://127.0.0.1:\(appState.proxyPort)")
+                        Text(verbatim: "http://127.0.0.1:\(String(format: "%d", appState.proxyPort))")
                             .font(.system(.body, design: .monospaced))
                             .textSelection(.enabled)
                         Spacer()
                         Button {
                             NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString("http://127.0.0.1:\(appState.proxyPort)", forType: .string)
+                            NSPasteboard.general.setString("http://127.0.0.1:\(String(format: "%d", appState.proxyPort))", forType: .string)
                         } label: {
                             Image(systemName: "doc.on.doc")
                         }
@@ -67,9 +71,10 @@ struct ConnectionStatusView: View {
 
                     HStack {
                         Text(appState.gatewayToken)
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.system(.body, design: .monospaced))
                             .textSelection(.enabled)
                             .lineLimit(1)
+                            .truncationMode(.middle)
                         Spacer()
                         Button {
                             NSPasteboard.general.clearContents()
@@ -129,7 +134,7 @@ struct ConnectionStatusView: View {
             Spacer()
 
             // Version
-            Text("CodexSwitch v1.0.0")
+            Text("CodexSwitch v\(appVersion)")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }

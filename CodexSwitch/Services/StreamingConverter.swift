@@ -7,10 +7,10 @@ final class StreamingConverter {
     private let provider: CodexProvider
     private let protocolConverter: ProtocolConverter
     private let historyStore: ChatHistoryStore
-    private let toolContext: ToolNameContext
+    private let toolContext: CodexToolContext
 
     init(provider: CodexProvider, protocolConverter: ProtocolConverter, historyStore: ChatHistoryStore,
-         toolContext: ToolNameContext = ToolNameContext()) {
+         toolContext: CodexToolContext = CodexToolContext()) {
         self.provider = provider
         self.protocolConverter = protocolConverter
         self.historyStore = historyStore
@@ -27,13 +27,13 @@ final class StreamingConverter {
         // Collect full response for history caching
         var fullContent = ""
         var fullReasoning = ""
-        var toolCalls: [(id: String, name: String, arguments: String)] = []
+        var toolCalls: [(id: String, chatName: String, arguments: String)] = []
 
         // Track reasoning item
         var reasoningItemId = ""
         var reasoningItemStarted = false
 
-        // Split non-standard inline `<think>...</think>` tags out of content
+        // Split non-standard inline </think> tags out of content
         // deltas and route them to the reasoning channel. Some Chat
         // Completions upstreams (GLM, Kimi, etc.) emit reasoning inline rather
         // than via `reasoning_content`.
@@ -92,7 +92,7 @@ final class StreamingConverter {
             }
 
             // Handle content — route through the inline-think splitter so that
-            // non-standard ` Reid... Reeves` tags become reasoning events.
+            // non-standard  tags become reasoning events.
             if let content = delta["content"] as? String, !content.isEmpty {
                 for segment in thinkSplitter.feed(content) {
                     switch segment {
@@ -107,42 +107,88 @@ final class StreamingConverter {
                 }
             }
 
-            // Handle tool_calls
+            // Handle tool_calls — dispatch based on tool kind
             if let toolCallsDelta = delta["tool_calls"] as? [[String: Any]] {
                 for call in toolCallsDelta {
                     let index = call["index"] as? Int ?? 0
 
                     if index >= toolCalls.count {
                         let callId = (call["id"] as? String) ?? "call_\(UUID().uuidString)"
-                        let rawName = (call["function"] as? [String: Any])?["name"] as? String ?? ""
-                        let restoredName = toolContext.restore(rawName)
-                        toolCalls.append((id: callId, name: restoredName, arguments: ""))
+                        let rawChatName = (call["function"] as? [String: Any])?["name"] as? String ?? ""
+                        toolCalls.append((id: callId, chatName: rawChatName, arguments: ""))
 
-                        let fcId = "fc_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
+                        // Determine item type and ID prefix based on tool kind
+                        let spec = toolContext.spec(forChatName: rawChatName)
+                        let itemType: String
+                        let itemIdPrefix: String
+                        let itemExtra: [String: Any]
+
+                        if spec?.kind == .custom {
+                            itemType = "custom_tool_call"
+                            itemIdPrefix = "ctc_"
+                            itemExtra = ["name": rawChatName]
+                        } else if spec?.kind == .toolSearch {
+                            itemType = "tool_search_call"
+                            itemIdPrefix = "tsc_"
+                            itemExtra = ["name": "tool_search", "execution": "client"]
+                        } else if let ns = spec?.namespace {
+                            itemType = "function_call"
+                            itemIdPrefix = "fc_"
+                            itemExtra = ["name": spec?.originalName ?? rawChatName, "namespace": ns]
+                        } else {
+                            itemType = "function_call"
+                            itemIdPrefix = "fc_"
+                            let originalName = toolContext.restoreOriginalName(rawChatName)
+                            itemExtra = ["name": originalName]
+                        }
+
+                        let itemId = "\(itemIdPrefix)\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
+                        var item: [String: Any] = [
+                            "id": itemId,
+                            "type": itemType,
+                            "call_id": callId,
+                            "status": "in_progress"
+                        ]
+                        for (k, v) in itemExtra { item[k] = v }
+
                         chunks.append(formatSSE([
                             "type": "response.output_item.added",
                             "response_id": responseId,
                             "output_index": outputIndex,
-                            "item": [
-                                "id": fcId,
-                                "type": "function_call",
-                                "call_id": callId,
-                                "name": restoredName,
-                                "arguments": "",
-                                "status": "in_progress"
-                            ] as [String: Any]
+                            "item": item
                         ]))
                         outputIndex += 1
                     }
 
                     if let arguments = (call["function"] as? [String: Any])?["arguments"] as? String {
                         toolCalls[index].arguments += arguments
+
+                        // Emit the appropriate delta event based on tool kind
+                        let spec = toolContext.spec(forChatName: toolCalls[index].chatName)
+                        let deltaEventType: String
+                        let deltaField: String
+                        let deltaValue: String
+
+                        if spec?.kind == .custom {
+                            deltaEventType = "response.custom_tool_call_input.delta"
+                            deltaField = "delta"
+                            deltaValue = arguments
+                        } else if spec?.kind == .toolSearch {
+                            deltaEventType = "response.tool_search_call_arguments.delta"
+                            deltaField = "delta"
+                            deltaValue = arguments
+                        } else {
+                            deltaEventType = "response.function_call_arguments.delta"
+                            deltaField = "delta"
+                            deltaValue = arguments
+                        }
+
                         chunks.append(formatSSE([
-                            "type": "response.function_call_arguments.delta",
+                            "type": deltaEventType,
                             "response_id": responseId,
-                            "item_id": toolCalls[index].id,
+                            "item_id": toolCalls[index].id.isEmpty ? "" : "\(itemIdPrefix(for: toolCalls[index].chatName))\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))",
                             "output_index": outputIndex - 1,
-                            "delta": arguments
+                            deltaField: deltaValue
                         ]))
                     }
                 }
@@ -298,7 +344,7 @@ final class StreamingConverter {
     private func buildOutputForCaching(
         content: String,
         reasoning: String,
-        toolCalls: [(id: String, name: String, arguments: String)]
+        toolCalls: [(id: String, chatName: String, arguments: String)]
     ) -> [[String: Any]] {
         var output: [[String: Any]] = []
 
@@ -319,16 +365,81 @@ final class StreamingConverter {
         }
 
         for call in toolCalls {
-            output.append([
-                "type": "function_call",
-                "call_id": call.id,
-                "name": call.name,
-                "arguments": call.arguments,
-                "status": "completed"
-            ])
+            let spec = toolContext.spec(forChatName: call.chatName)
+
+            if spec?.kind == .custom {
+                // Custom tool: extract input from arguments
+                let inputStr = extractCustomToolInput(call.arguments)
+                output.append([
+                    "type": "custom_tool_call",
+                    "call_id": call.id,
+                    "name": call.chatName,
+                    "input": inputStr,
+                    "status": "completed"
+                ])
+            } else if spec?.kind == .toolSearch {
+                // Tool search: parse arguments as JSON object
+                let argsObj = parseToolArguments(call.arguments)
+                output.append([
+                    "type": "tool_search_call",
+                    "call_id": call.id,
+                    "name": "tool_search",
+                    "arguments": argsObj,
+                    "execution": "client",
+                    "status": "completed"
+                ])
+            } else if let ns = spec?.namespace {
+                // Namespace tool
+                output.append([
+                    "type": "function_call",
+                    "call_id": call.id,
+                    "name": spec?.originalName ?? call.chatName,
+                    "namespace": ns,
+                    "arguments": call.arguments,
+                    "status": "completed"
+                ])
+            } else {
+                // Plain function
+                let originalName = toolContext.restoreOriginalName(call.chatName)
+                output.append([
+                    "type": "function_call",
+                    "call_id": call.id,
+                    "name": originalName,
+                    "arguments": call.arguments,
+                    "status": "completed"
+                ])
+            }
         }
 
         return output
+    }
+
+    // MARK: - Tool Kind Helpers
+
+    private func extractCustomToolInput(_ arguments: String) -> String {
+        guard let data = arguments.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let input = json["input"] as? String else {
+            return arguments
+        }
+        return input
+    }
+
+    private func parseToolArguments(_ arguments: String) -> [String: Any] {
+        guard let data = arguments.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return [:]
+        }
+        return json
+    }
+
+    private func itemIdPrefix(for chatName: String) -> String {
+        let spec = toolContext.spec(forChatName: chatName)
+        switch spec?.kind {
+        case .custom: return "ctc_"
+        case .toolSearch: return "tsc_"
+        default: return "fc_"
+        }
     }
 
     private func formatSSE(_ event: [String: Any]) -> Data {
