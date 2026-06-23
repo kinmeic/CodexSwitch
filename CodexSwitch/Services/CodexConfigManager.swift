@@ -50,12 +50,30 @@ enum CodexConfigManager {
 
     // MARK: - Restore Official
 
+    // MARK: - Restore Official
+
+    /// Keys that CodexSwitch injects into the top-level (sectionless) area of
+    /// config.toml. These are removed when restoring official mode.
+    private static let managedTopLevelKeys: Set<String> = [
+        "model_provider", "model", "review_model", "model_reasoning_effort",
+        "disable_response_storage", "model_context_window",
+        "model_auto_compact_token_limit", "model_catalog_json",
+    ]
+
+    /// Sections that CodexSwitch creates. The whole section is removed on
+    /// restore, except `[features]` which is pruned key-by-key so user-defined
+    /// feature flags survive.
+    private static let managedSections: Set<String> = [
+        "model_providers.custom",
+    ]
+
     static func restoreOfficial() throws {
         let paths = resolvePaths()
 
-        // Remove custom config.toml
+        // Prune config.toml rather than deleting it, so user-defined sections
+        // (e.g. mcp_servers, custom features) survive the switch.
         if FileManager.default.fileExists(atPath: paths.configTOMLPath) {
-            try FileManager.default.removeItem(atPath: paths.configTOMLPath)
+            try pruneConfigTOML(at: paths.configTOMLPath)
         }
 
         // Remove model catalog
@@ -63,8 +81,120 @@ enum CodexConfigManager {
             try FileManager.default.removeItem(atPath: paths.modelCatalogPath)
         }
 
-        // Preserve auth.json (contains ChatGPT login cache)
+        // Preserve auth.json (contains ChatGPT login cache), but strip any
+        // stale OPENAI_API_KEY that was written by a third-party provider
+        // so the official CLI doesn't try to use it.
+        stripThirdPartyAPIKey(from: paths.authJSONPath)
+
         logger.info("Restored Codex CLI to official mode")
+    }
+
+    /// Remove `OPENAI_API_KEY` from `auth.json` if it exists, preserving
+    /// ChatGPT OAuth tokens and any other fields.
+    private static func stripThirdPartyAPIKey(from path: String) {
+        guard FileManager.default.fileExists(atPath: path),
+              var json = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as? [String: Any])
+              else { return }
+        json.removeValue(forKey: "OPENAI_API_KEY")
+        if json.isEmpty {
+            try? FileManager.default.removeItem(atPath: path)
+        } else if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        }
+    }
+
+    /// Read config.toml, strip managed keys/sections, and rewrite. If the
+    /// resulting file is empty (or only whitespace), delete it instead.
+    private static func pruneConfigTOML(at path: String) throws {
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+            try FileManager.default.removeItem(atPath: path)
+            return
+        }
+
+        var sections: [(name: String?, lines: [String])] = []
+        var currentSection: String? = nil
+        var currentLines: [String] = []
+
+        for line in content.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                if !currentLines.isEmpty || currentSection != nil {
+                    sections.append((currentSection, currentLines))
+                }
+                currentSection = String(trimmed.dropFirst().dropLast())
+                currentLines = []
+            } else {
+                currentLines.append(line)
+            }
+        }
+        if !currentLines.isEmpty || currentSection != nil {
+            sections.append((currentSection, currentLines))
+        }
+
+        // Remove managed sections entirely
+        sections.removeAll { managedSections.contains($0.name ?? "") }
+
+        // Strip managed keys from the top-level section
+        if let idx = sections.firstIndex(where: { $0.name == nil }) {
+            var lines = sections[idx].lines
+            lines = lines.filter { line in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                // Drop empty lines and comments? No — keep them.
+                // Only drop lines that start with a managed key.
+                guard !trimmed.isEmpty else { return true }
+                for key in managedTopLevelKeys {
+                    let pattern = "^\(NSRegularExpression.escapedPattern(for: key))\\s*="
+                    if line.range(of: pattern, options: .regularExpression) != nil {
+                        return false
+                    }
+                }
+                return true
+            }
+            // Remove the section entirely if it became empty
+            let nonEmpty = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            if nonEmpty.isEmpty {
+                sections.remove(at: idx)
+            } else {
+                sections[idx].lines = lines
+            }
+        }
+
+        // Strip managed keys from [features] (only `goals` for now)
+        if let idx = sections.firstIndex(where: { $0.name == "features" }) {
+            var lines = sections[idx].lines
+            lines = lines.filter { line in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.isEmpty else { return true }
+                let pattern = "^goals\\s*="
+                return line.range(of: pattern, options: .regularExpression) == nil
+            }
+            let nonEmpty = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            if nonEmpty.isEmpty {
+                sections.remove(at: idx)
+            } else {
+                sections[idx].lines = lines
+            }
+        }
+
+        // Reconstruct
+        var output: [String] = []
+        for (sectionName, lines) in sections {
+            if let name = sectionName {
+                if !output.isEmpty && !output.last!.isEmpty {
+                    output.append("")
+                }
+                output.append("[\(name)]")
+            }
+            output.append(contentsOf: lines)
+        }
+
+        let toml = output.joined(separator: "\n")
+        let meaningful = toml.trimmingCharacters(in: .whitespacesAndNewlines)
+        if meaningful.isEmpty {
+            try FileManager.default.removeItem(atPath: path)
+        } else {
+            try toml.write(toFile: path, atomically: true, encoding: .utf8)
+        }
     }
 
     /// Whether applying `provider` should overwrite `auth.json`.

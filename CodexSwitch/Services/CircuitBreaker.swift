@@ -118,6 +118,18 @@ final class CircuitBreaker {
         }
     }
 
+    /// Release a consumed HalfOpen probe permit WITHOUT recording a success or
+    /// failure. Call this when a request that passed `allowRequest()` bails out
+    /// before it can resolve the probe outcome (e.g. malformed request → 400,
+    /// invalid upstream URL → 502, client disconnect mid-stream). Without this,
+    /// `isProbing` stays true forever and the breaker is jammed in HalfOpen,
+    /// rejecting every subsequent request.
+    func releaseProbe() {
+        lock.lock()
+        defer { lock.unlock() }
+        isProbing = false
+    }
+
     /// Reset the circuit breaker to its initial Closed state.
     func reset() {
         lock.lock()
@@ -205,5 +217,11 @@ final class CircuitBreakerRegistry {
     /// Allow a request for a provider (consumes HalfOpen permit if applicable).
     func allowRequest(providerId: UUID) -> Bool {
         breaker(for: providerId).allowRequest()
+    }
+
+    /// Release a HalfOpen probe permit for a provider without recording an
+    /// outcome. Used when a request bails out before reaching the upstream.
+    func releaseProbe(providerId: UUID) {
+        breaker(for: providerId).releaseProbe()
     }
 }

@@ -8,8 +8,8 @@ enum CodexApiFormat: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .responses: return "Responses API (Direct)"
-        case .chatCompletions: return "Chat Completions (Proxy)"
+        case .responses: return L10n.tr("Responses API (Direct)")
+        case .chatCompletions: return L10n.tr("Chat Completions (Proxy)")
         }
     }
 }

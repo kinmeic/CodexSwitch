@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ConnectionStatusView: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var l10n = Localization.shared
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
@@ -23,7 +24,7 @@ struct ConnectionStatusView: View {
             if let provider = appState.activeProvider, !provider.isOfficial {
                 HStack(spacing: 6) {
                     Image(systemName: provider.apiFormat == .chatCompletions ? "arrow.left.arrow.right" : "arrow.right")
-                    Text(provider.apiFormat == .chatCompletions ? "Proxy Mode" : "Direct Mode")
+                    Text(provider.apiFormat == .chatCompletions ? l10n.tr("Proxy Mode") : l10n.tr("Direct Mode"))
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -33,7 +34,7 @@ struct ConnectionStatusView: View {
             if let provider = appState.activeProvider, !provider.isOfficial, provider.apiFormat == .chatCompletions {
                 VStack(spacing: 8) {
                     HStack {
-                        Text("Proxy Server")
+                        Text(l10n.tr("Proxy Server"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -62,7 +63,7 @@ struct ConnectionStatusView: View {
             if let provider = appState.activeProvider, !provider.isOfficial, provider.apiFormat == .chatCompletions {
                 VStack(spacing: 8) {
                     HStack {
-                        Text("Gateway Token")
+                        Text(l10n.tr("Gateway Token"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -92,7 +93,7 @@ struct ConnectionStatusView: View {
             // Active Provider
             if let provider = appState.activeProvider {
                 HStack {
-                    Text("Active Provider:")
+                    Text(l10n.tr("Active Provider:"))
                         .foregroundStyle(.secondary)
                     Text(provider.name)
                         .bold()
@@ -107,13 +108,13 @@ struct ConnectionStatusView: View {
             // Start/Stop Button
             if let provider = appState.activeProvider, !provider.isOfficial {
                 if appState.proxyRunning {
-                    Button("Stop Proxy") {
+                    Button(l10n.tr("Stop Proxy")) {
                         appState.stopProxy()
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)
                 } else {
-                    Button("Start") {
+                    Button(l10n.tr("Start")) {
                         appState.startProxy()
                     }
                     .buttonStyle(.borderedProminent)
@@ -161,11 +162,11 @@ struct ConnectionStatusView: View {
 
     private var statusTitle: String {
         if appState.proxyRunning {
-            return "Proxy Running"
+            return l10n.tr("Proxy Running")
         } else if appState.isDirectMode {
-            return "Direct Mode"
+            return l10n.tr("Direct Mode")
         } else {
-            return "Stopped"
+            return l10n.tr("Stopped")
         }
     }
 }

@@ -33,16 +33,18 @@ struct CodexSwitchApp: App {
     // singleton whose lifecycle is not tied to this Scene. Using @StateObject
     // would semantically imply ownership that doesn't apply here.
     @ObservedObject private var appState = AppState.shared
+    @ObservedObject private var l10n = Localization.shared
 
     var body: some Scene {
         MenuBarExtra {
             MenuBarMenu()
                 .environmentObject(appState)
         } label: {
-            Image(appState.proxyRunning ? "MenuBarIconActive" : "MenuBarIcon")
-                .renderingMode(.original)
-                .id(appState.proxyRunning)
-                .accessibilityLabel(appState.proxyRunning ? "CodexSwitch proxy running" : "CodexSwitch proxy stopped")
+            // Menu bar icon: hollow c.square when stopped, filled c.square.fill
+            // when the proxy is running.
+            Image(systemName: appState.proxyRunning ? "c.square.fill" : "c.square")
+                .font(.system(size: 22))
+                .accessibilityLabel(appState.proxyRunning ? l10n.tr("CodexSwitch proxy running") : l10n.tr("CodexSwitch proxy stopped"))
         }
 
         Window("Codex Switch", id: "main") {

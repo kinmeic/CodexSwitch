@@ -102,23 +102,23 @@ final class NetworkSessionManager {
         guard let components = URLComponents(string: normalized),
               let scheme = components.scheme?.lowercased(),
               !scheme.isEmpty else {
-            return "Invalid proxy address. Include a scheme, such as http:// or socks5://."
+            return L10n.tr("Invalid proxy address. Include a scheme, such as http:// or socks5://.")
         }
 
         guard ["http", "https", "socks", "socks5", "socks5h"].contains(scheme) else {
-            return "Unsupported proxy scheme. Use http, https, socks, socks5, or socks5h."
+            return L10n.tr("Unsupported proxy scheme. Use http, https, socks, socks5, or socks5h.")
         }
 
         guard let host = components.host, !host.isEmpty else {
-            return "Invalid proxy address. Include a host, such as 127.0.0.1."
+            return L10n.tr("Invalid proxy address. Include a host, such as 127.0.0.1.")
         }
 
         if let port = components.port, !(1...65535).contains(port) {
-            return "Invalid proxy port. Use a value between 1 and 65535."
+            return L10n.tr("Invalid proxy port. Use a value between 1 and 65535.")
         }
 
         guard URL(string: normalized) != nil else {
-            return "Invalid proxy address format."
+            return L10n.tr("Invalid proxy address format.")
         }
 
         return nil

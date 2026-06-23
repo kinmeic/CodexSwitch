@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProviderListView: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var l10n = Localization.shared
     @State private var selectedId: UUID?
     @State private var showAddSheet = false
 
@@ -15,15 +16,15 @@ struct ProviderListView: View {
                             .tag(provider.id)
                             .contextMenu {
                                 if !provider.isOfficial {
-                                    Button("Duplicate") {
+                                    Button(l10n.tr("Duplicate")) {
                                         let copy = appState.duplicateProvider(provider)
                                         selectedId = copy.id
                                     }
-                                    Button("Set Active") {
+                                    Button(l10n.tr("Set Active")) {
                                         appState.setActive(provider)
                                     }
                                     Divider()
-                                    Button("Delete", role: .destructive) {
+                                    Button(l10n.tr("Delete"), role: .destructive) {
                                         appState.removeProvider(provider)
                                         if selectedId == provider.id { selectedId = nil }
                                     }
@@ -37,19 +38,19 @@ struct ProviderListView: View {
                 HStack {
                     Button { showAddSheet = true } label: { Image(systemName: "plus") }
                         .buttonStyle(.borderless)
-                        .help("Add provider")
+                        .help(l10n.tr("Add provider"))
                     Spacer()
                     if let selectedId, let provider = appState.providers.first(where: { $0.id == selectedId }) {
                         Button { appState.setActive(provider) } label: { Image(systemName: "checkmark.circle") }
                             .buttonStyle(.borderless)
-                            .help("Set as active provider")
+                            .help(l10n.tr("Set as active provider"))
                         if !provider.isOfficial {
                             Button {
                                 appState.removeProvider(provider)
                                 self.selectedId = nil
                             } label: { Image(systemName: "minus") }
                                 .buttonStyle(.borderless)
-                                .help("Remove provider")
+                                .help(l10n.tr("Remove provider"))
                         }
                     }
                 }
@@ -64,7 +65,7 @@ struct ProviderListView: View {
                     .id(provider.id)
                     .frame(maxWidth: .infinity)
             } else {
-                VStack { Spacer(); Text("Select a provider").foregroundStyle(.secondary); Spacer() }
+                VStack { Spacer(); Text(l10n.tr("Select a provider")).foregroundStyle(.secondary); Spacer() }
                     .frame(maxWidth: .infinity)
             }
         }
@@ -129,6 +130,7 @@ struct ProviderRow: View {
 
 struct ProviderEditor: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var l10n = Localization.shared
     let provider: CodexProvider
 
     @StateObject private var oauth = CodexOAuthManager.shared
@@ -137,6 +139,7 @@ struct ProviderEditor: View {
     @State private var isLoaded = false
     @State private var testResult: String?
     @State private var testing = false
+    @State private var testSucceeded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -157,17 +160,22 @@ struct ProviderEditor: View {
                     Button {
                         testing = true
                         testResult = nil
+                        testSucceeded = false
                         appState.testConnection(provider: draft) { result in
                             testing = false
                             switch result {
-                            case .success(let msg): testResult = msg
-                            case .failure(let err): testResult = "Failed: \(err.localizedDescription)"
+                            case .success(let msg):
+                                testResult = msg
+                                testSucceeded = true
+                            case .failure(let err):
+                                testResult = String(format: l10n.tr("Failed: %@"), err.localizedDescription)
+                                testSucceeded = false
                             }
                         }
                     } label: {
                         HStack {
                             if testing { ProgressView().controlSize(.small) }
-                            Text("Test Connection")
+                            Text(l10n.tr("Test Connection"))
                         }
                     }
                     .disabled(testing || draft.apiKey.isEmpty)
@@ -175,14 +183,14 @@ struct ProviderEditor: View {
                     if let testResult {
                         Text(testResult)
                             .font(.caption)
-                            .foregroundStyle(testResult.contains("successful") ? .green : .secondary)
+                            .foregroundStyle(testSucceeded ? .green : .secondary)
                             .lineLimit(1)
                     }
 
                     Spacer()
 
                     if hasChanges {
-                        Button("Save") { save() }
+                        Button(l10n.tr("Save")) { save() }
                             .buttonStyle(.borderedProminent)
                     }
                 }
@@ -213,9 +221,9 @@ struct ProviderEditor: View {
 
     private var officialView: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("OpenAI Official")
+            Text(l10n.tr("OpenAI Official"))
                 .font(.headline)
-            Text("Uses your ChatGPT login for authentication. Select this provider to restore the official Codex CLI configuration.")
+            Text(l10n.tr("Uses your ChatGPT login for authentication. Select this provider to restore the official Codex CLI configuration."))
                 .foregroundStyle(.secondary)
 
             // Current ChatGPT login state (from Keychain or ~/.codex/auth.json).
@@ -229,17 +237,17 @@ struct ProviderEditor: View {
 
             HStack {
                 if case .idle = oauth.phase {
-                    Button("Sign in with ChatGPT") {
+                    Button(l10n.tr("Sign in with ChatGPT")) {
                         oauth.startDeviceFlow()
                     }
                     .buttonStyle(.bordered)
                 } else if case .authenticated = oauth.phase {
-                    Button("Sign out") {
+                    Button(l10n.tr("Sign out")) {
                         oauth.signOut()
                     }
                     .buttonStyle(.bordered)
                 } else if case .failed = oauth.phase {
-                    Button("Try again") {
+                    Button(l10n.tr("Try again")) {
                         oauth.startDeviceFlow()
                     }
                     .buttonStyle(.bordered)
@@ -247,7 +255,7 @@ struct ProviderEditor: View {
                 // Awaiting/exchanging phases: no extra button needed —
                 // the flow's own controls live inside ChatGPTLoginStatus.
 
-                Button("Restore Official Login") {
+                Button(l10n.tr("Restore Official Login")) {
                     appState.setActive(provider)
                 }
                 .buttonStyle(.borderedProminent)
@@ -267,27 +275,27 @@ struct ProviderEditor: View {
     private var customView: some View {
         VStack(alignment: .leading, spacing: 0) {
             // General
-            sectionHeader("General")
+            sectionHeader(l10n.tr("General"))
             VStack(spacing: 0) {
-                fieldRow(label: "Name") {
+                fieldRow(label: l10n.tr("Name")) {
                     TextField("", text: $draft.name)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                 }
                 Divider().padding(.horizontal, 8)
-                fieldRow(label: "Base URL") {
+                fieldRow(label: l10n.tr("Base URL")) {
                     TextField("https://api.example.com", text: $draft.baseURL)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                 }
                 Divider().padding(.horizontal, 8)
-                fieldRow(label: "API Key") {
+                fieldRow(label: l10n.tr("API Key")) {
                     SecureField("", text: $draft.apiKey)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                 }
                 Divider().padding(.horizontal, 8)
-                fieldRow(label: "API Format") {
+                fieldRow(label: l10n.tr("API Format")) {
                     Picker("", selection: $draft.apiFormat) {
                         ForEach(CodexApiFormat.allCases, id: \.self) { format in
                             Text(format.displayName).tag(format)
@@ -298,13 +306,13 @@ struct ProviderEditor: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 Divider().padding(.horizontal, 8)
-                fieldRow(label: "Review Model") {
+                fieldRow(label: l10n.tr("Review Model")) {
                     TextField("gpt-5.5", text: $draft.reviewModel)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                 }
                 Divider().padding(.horizontal, 8)
-                fieldRow(label: "Goal Mode") {
+                fieldRow(label: l10n.tr("Goal Mode")) {
                     Spacer()
                     Toggle("", isOn: $draft.goalsEnabled)
                         .toggleStyle(.switch)
@@ -318,8 +326,8 @@ struct ProviderEditor: View {
             .padding(.bottom, 16)
 
             // Model Catalog
-            sectionHeader("Model Catalog")
-            Text("Model ID is what Codex CLI sees. Display Name appears in Codex; both are sent to the provider as available models.")
+            sectionHeader(l10n.tr("Model Catalog"))
+            Text(l10n.tr("Model ID is what Codex CLI sees. Display Name appears in Codex; both are sent to the provider as available models."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 20)
@@ -331,9 +339,9 @@ struct ProviderEditor: View {
 
             // Chat Reasoning (Chat Completions only)
             if draft.apiFormat == .chatCompletions {
-                sectionHeader("Chat Reasoning")
+                sectionHeader(l10n.tr("Chat Reasoning"))
                 VStack(spacing: 0) {
-                    fieldRow(label: "Enable Thinking") {
+                    fieldRow(label: l10n.tr("Enable Thinking")) {
                         Spacer()
                         Toggle("", isOn: Binding(
                             get: { draft.chatReasoning?.supportsThinking ?? false },
@@ -344,7 +352,7 @@ struct ProviderEditor: View {
                         .labelsHidden()
                     }
                     Divider().padding(.horizontal, 8)
-                    fieldRow(label: "Enable Effort") {
+                    fieldRow(label: l10n.tr("Enable Effort")) {
                         Spacer()
                         Toggle("", isOn: Binding(
                             get: { draft.chatReasoning?.supportsEffort ?? false },
@@ -355,7 +363,7 @@ struct ProviderEditor: View {
                         .labelsHidden()
                     }
                     Divider().padding(.horizontal, 8)
-                    fieldRow(label: "Thinking Param") {
+                    fieldRow(label: l10n.tr("Thinking Param")) {
                         Picker("", selection: Binding(
                             get: { draft.chatReasoning?.thinkingParam ?? "thinking" },
                             set: { draft.chatReasoning?.thinkingParam = $0 }
@@ -369,7 +377,7 @@ struct ProviderEditor: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                     Divider().padding(.horizontal, 8)
-                    fieldRow(label: "Effort Param") {
+                    fieldRow(label: l10n.tr("Effort Param")) {
                         Picker("", selection: Binding(
                             get: { draft.chatReasoning?.effortParam ?? "none" },
                             set: { draft.chatReasoning?.effortParam = $0 }
@@ -383,7 +391,7 @@ struct ProviderEditor: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                     Divider().padding(.horizontal, 8)
-                    fieldRow(label: "Effort Mode") {
+                    fieldRow(label: l10n.tr("Effort Mode")) {
                         Picker("", selection: Binding(
                             get: { draft.chatReasoning?.effortValueMode },
                             set: { draft.chatReasoning?.effortValueMode = $0 }
@@ -398,7 +406,7 @@ struct ProviderEditor: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                     Divider().padding(.horizontal, 8)
-                    fieldRow(label: "Output Format") {
+                    fieldRow(label: l10n.tr("Output Format")) {
                         Picker("", selection: Binding(
                             get: { draft.chatReasoning?.outputFormat ?? "reasoning_content" },
                             set: { draft.chatReasoning?.outputFormat = $0 }
@@ -467,16 +475,17 @@ struct ProviderEditor: View {
 
 struct ModelCatalogTable: View {
     @Binding var models: [CodexCatalogModel]
+    @ObservedObject private var l10n = Localization.shared
 
     var body: some View {
         VStack(spacing: 0) {
             // Header
             HStack(spacing: 12) {
-                Text("Model ID")
+                Text(l10n.tr("Model ID"))
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Display Name")
+                Text(l10n.tr("Display Name"))
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Context")
+                Text(l10n.tr("Context"))
                     .frame(width: 90, alignment: .leading)
                 Color.clear.frame(width: 24)
             }
@@ -490,7 +499,7 @@ struct ModelCatalogTable: View {
 
             // Rows
             if models.isEmpty {
-                Text("No models defined")
+                Text(l10n.tr("No models defined"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -503,7 +512,7 @@ struct ModelCatalogTable: View {
                             TextField("model-id", text: $models[index].model)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(maxWidth: .infinity)
-                            TextField("Display Name", text: $models[index].displayName)
+                            TextField(l10n.tr("Display Name"), text: $models[index].displayName)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(maxWidth: .infinity)
                             TextField("128000", value: $models[index].contextWindow, format: .number.grouping(.never))
@@ -536,7 +545,7 @@ struct ModelCatalogTable: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "plus")
-                        Text("Add Model")
+                        Text(l10n.tr("Add Model"))
                     }
                 }
                 .buttonStyle(.bordered)
@@ -554,6 +563,7 @@ struct ModelCatalogTable: View {
 
 struct AddProviderSheet: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var l10n = Localization.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var name = ""
@@ -561,19 +571,19 @@ struct AddProviderSheet: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("Add Provider").font(.headline)
+            Text(l10n.tr("Add Provider")).font(.headline)
             Form {
-                TextField("Name", text: $name)
-                TextField("Base URL", text: $baseURL)
+                TextField(l10n.tr("Name"), text: $name)
+                TextField(l10n.tr("Base URL"), text: $baseURL)
                     .textFieldStyle(.roundedBorder)
             }
             .formStyle(.grouped)
             HStack {
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(l10n.tr("Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Add") {
+                Button(l10n.tr("Add")) {
                     let provider = CodexProvider(
-                        name: name.isEmpty ? "New Provider" : name,
+                        name: name.isEmpty ? l10n.tr("New Provider") : name,
                         baseURL: baseURL,
                         apiKey: "",
                         apiFormat: .chatCompletions,

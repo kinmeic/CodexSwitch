@@ -228,7 +228,7 @@ final class AppState: ObservableObject {
 
     func startProxy() {
         guard let provider = activeProvider else {
-            proxyServer.lastError = "Select a provider before starting"
+            proxyServer.lastError = L10n.tr("Select a provider before starting")
             logger.warning("No active provider selected")
             return
         }
@@ -249,7 +249,7 @@ final class AppState: ObservableObject {
         do {
             try CodexConfigManager.applyProvider(provider, port: proxyPort, gatewayToken: gatewayToken, preserveOfficialAuth: preserveOfficialAuth)
         } catch {
-            proxyServer.lastError = "Failed to apply Codex config: \(error.localizedDescription)"
+            proxyServer.lastError = String(format: L10n.tr("Failed to apply Codex config: %@"), error.localizedDescription)
             logger.error("Failed to apply config: \(error.localizedDescription)")
             return
         }
@@ -260,7 +260,7 @@ final class AppState: ObservableObject {
                 try proxyServer.start(port: proxyPort, provider: provider, gatewayToken: gatewayToken)
                 logger.info("Started proxy on port \(self.proxyPort)")
             } catch {
-                proxyServer.lastError = "Failed to start proxy: \(error.localizedDescription)"
+                proxyServer.lastError = String(format: L10n.tr("Failed to start proxy: %@"), error.localizedDescription)
                 logger.error("Failed to start proxy: \(error.localizedDescription)")
             }
         } else {
@@ -304,7 +304,7 @@ final class AppState: ObservableObject {
     private func restartProxyAfterPortChange(from oldPort: Int) {
         guard oldPort != proxyPort else { return }
         guard (1...65535).contains(proxyPort) else {
-            proxyServer.lastError = "Port must be between 1 and 65535"
+            proxyServer.lastError = L10n.tr("Port must be between 1 and 65535")
             return
         }
 
@@ -354,7 +354,7 @@ final class AppState: ObservableObject {
                 showCodexRestartNotice()
             }
         } catch {
-            proxyServer.lastError = "Failed to apply Codex config: \(error.localizedDescription)"
+            proxyServer.lastError = String(format: L10n.tr("Failed to apply Codex config: %@"), error.localizedDescription)
             logger.error("Failed to apply config: \(error.localizedDescription)")
         }
     }
@@ -362,8 +362,8 @@ final class AppState: ObservableObject {
     private func showCodexRestartNotice() {
         DispatchQueue.main.async {
             let alert = NSAlert()
-            alert.messageText = "Codex CLI Restart Required"
-            alert.informativeText = "Restart Codex CLI for changes to take effect."
+            alert.messageText = L10n.tr("Codex CLI Restart Required")
+            alert.informativeText = L10n.tr("Restart Codex CLI for changes to take effect.")
             alert.alertStyle = .informational
             alert.addButton(withTitle: "OK")
             NSApp.activate(ignoringOtherApps: true)
@@ -379,11 +379,11 @@ final class AppState: ObservableObject {
 
         if provider.apiFormat == .chatCompletions {
             if !(1...65535).contains(proxyPort) {
-                errors.append("Port must be between 1 and 65535")
+                errors.append(L10n.tr("Port must be between 1 and 65535"))
             } else if !proxyServer.running || proxyServer.port != proxyPort {
                 let occupants = portOccupants(proxyPort)
                 if !occupants.isEmpty {
-                    errors.append("Port \(proxyPort) is already in use by \(occupants.joined(separator: ", "))")
+                    errors.append(String(format: L10n.tr("Port %d is already in use by %@"), proxyPort, occupants.joined(separator: ", ")))
                 }
             }
         }
@@ -395,24 +395,24 @@ final class AppState: ObservableObject {
            url.host != nil {
             // Valid
         } else {
-            errors.append("Active provider has an invalid Base URL")
+            errors.append(L10n.tr("Active provider has an invalid Base URL"))
         }
 
         if provider.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            errors.append("Active provider API key is empty")
+            errors.append(L10n.tr("Active provider API key is empty"))
         }
 
         if provider.modelCatalog.isEmpty {
-            errors.append("Active provider has no models in catalog")
+            errors.append(L10n.tr("Active provider has no models in catalog"))
         } else if provider.modelCatalog.contains(where: { $0.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-            errors.append("Every model needs an actual model ID")
+            errors.append(L10n.tr("Every model needs an actual model ID"))
         }
 
         let configDir = AppEnvironment.codexConfigPath
         let parentDir = (configDir as NSString).deletingLastPathComponent
         if !FileManager.default.isWritableFile(atPath: configDir) &&
            !FileManager.default.isWritableFile(atPath: parentDir) {
-            errors.append("Codex config directory is not writable: \(configDir)")
+            errors.append(String(format: L10n.tr("Codex config directory is not writable: %@"), configDir))
         }
 
         return errors
@@ -452,7 +452,7 @@ final class AppState: ObservableObject {
 
     func testConnection(provider: CodexProvider, completion: @escaping (Result<String, Error>) -> Void) {
         guard !provider.isOfficial else {
-            completion(.success("OpenAI Official uses ChatGPT login authentication"))
+            completion(.success(L10n.tr("OpenAI Official uses ChatGPT login authentication")))
             return
         }
 
@@ -477,7 +477,7 @@ final class AppState: ObservableObject {
 
         guard let url = URL(string: baseURL + endpoint) else {
             completion(.failure(NSError(domain: "test", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
+                userInfo: [NSLocalizedDescriptionKey: L10n.tr("Invalid URL")])))
             return
         }
 
@@ -512,15 +512,15 @@ final class AppState: ObservableObject {
             if status == 200 || status == 400 || status == 401 || status == 403 {
                 let msg: String
                 if status == 200 {
-                    msg = "Connection successful (HTTP 200)"
+                    msg = L10n.tr("Connection successful (HTTP 200)")
                 } else if status == 401 || status == 403 {
-                    msg = "API key rejected (HTTP \(status))"
+                    msg = String(format: L10n.tr("API key rejected (HTTP %d)"), status)
                 } else {
-                    msg = "Server reachable (HTTP \(status))"
+                    msg = String(format: L10n.tr("Server reachable (HTTP %d)"), status)
                 }
                 DispatchQueue.main.async { completion(.success(msg)) }
             } else {
-                let msg = "Unexpected response (HTTP \(status))"
+                let msg = String(format: L10n.tr("Unexpected response (HTTP %d)"), status)
                 DispatchQueue.main.async {
                     completion(.failure(NSError(domain: "test", code: status,
                         userInfo: [NSLocalizedDescriptionKey: msg])))
@@ -536,7 +536,7 @@ final class AppState: ObservableObject {
             showCodexRestartNotice()
             logger.info("Restored Codex CLI to official mode")
         } catch {
-            proxyServer.lastError = "Failed to restore Codex official config: \(error.localizedDescription)"
+            proxyServer.lastError = String(format: L10n.tr("Failed to restore Codex official config: %@"), error.localizedDescription)
             logger.error("Failed to restore official config: \(error.localizedDescription)")
         }
     }

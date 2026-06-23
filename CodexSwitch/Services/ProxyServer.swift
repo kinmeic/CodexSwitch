@@ -44,12 +44,32 @@ struct ProxyRequestLog: Identifiable {
 final class ProxyServer: ObservableObject {
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "com.codex.switch.proxy", qos: .userInitiated)
-    private var gatewayToken: String = ""
-    private var activeProvider: CodexProvider?
+    /// Guards the mutable, cross-queue settings below. These are written from
+    /// the main thread (`updateProvider`/`updateToken`/`injectPromptCacheKey`)
+    /// and read from the proxy `queue` while handling requests. Without a lock
+    /// a concurrent read/write of a struct (CodexProvider) can tear.
+    private let stateLock = NSLock()
+    private var _gatewayToken: String = ""
+    private var _activeProvider: CodexProvider?
+    private var _injectPromptCacheKey: Bool = false
+    private let maxRequestBodyBytes = 10 * 1024 * 1024
+
+    /// Thread-safe accessors for cross-queue state. Reads return copies taken
+    /// under the lock; writes take the lock for the whole assignment.
+    private var gatewayToken: String {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _gatewayToken }
+        set { stateLock.lock(); _gatewayToken = newValue; stateLock.unlock() }
+    }
+    private var activeProvider: CodexProvider? {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _activeProvider }
+        set { stateLock.lock(); _activeProvider = newValue; stateLock.unlock() }
+    }
     /// Whether to inject a stable `prompt_cache_key` into upstream Responses
     /// requests when the client omits one. Synced from AppState settings.
-    var injectPromptCacheKey: Bool = false
-    private let maxRequestBodyBytes = 10 * 1024 * 1024
+    var injectPromptCacheKey: Bool {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _injectPromptCacheKey }
+        set { stateLock.lock(); _injectPromptCacheKey = newValue; stateLock.unlock() }
+    }
 
     let protocolConverter = ProtocolConverter()
     let historyStore = ChatHistoryStore()
@@ -57,7 +77,6 @@ final class ProxyServer: ObservableObject {
 
     @Published var running = false
     @Published var port: Int = AppEnvironment.defaultPort
-    @Published var requestCount: Int = 0
     @Published var lastError: String?
     @Published private(set) var requestLogs: [ProxyRequestLog] = []
 
@@ -136,7 +155,7 @@ final class ProxyServer: ObservableObject {
         receiveRequest(connection, buffer: Data())
     }
 
-    private func receiveRequest(_ connection: NWConnection, buffer: Data) {
+    private func receiveRequest(_ connection: NWConnection, buffer: Data, sentContinue: Bool = false) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
             guard let self else {
                 connection.cancel()
@@ -168,14 +187,48 @@ final class ProxyServer: ObservableObject {
                 self.recordRequest(method: "?", path: "request", providerName: nil, status: 400, startedAt: Date(), error: "Bad Request")
                 self.sendResponse(connection: connection, status: 400, body: self.errorBody("Bad Request"))
             } else {
-                self.receiveRequest(connection, buffer: nextBuffer)
+                // Body may be incomplete. If the client sent Expect: 100-continue,
+                // send the interim response once so it proceeds with the body.
+                var didSendContinue = sentContinue
+                if !sentContinue,
+                   self.hasCompleteHeaders(nextBuffer),
+                   self.expectsContinueInBuffer(nextBuffer) {
+                    self.sendContinue(connection)
+                    didSendContinue = true
+                }
+                self.receiveRequest(connection, buffer: nextBuffer, sentContinue: didSendContinue)
             }
         }
     }
 
-    private func processRequest(request: HTTPRequest, connection: NWConnection, startedAt: Date) {
-        DispatchQueue.main.async { self.requestCount += 1 }
+    /// True if the buffer contains at least the complete HTTP headers
+    /// (i.e. the \r\n\r\n separator is present).
+    private func hasCompleteHeaders(_ data: Data) -> Bool {
+        data.range(of: Data("\r\n\r\n".utf8)) != nil
+    }
 
+    /// Parse only the headers to check for Expect: 100-continue.
+    private func expectsContinueInBuffer(_ data: Data) -> Bool {
+        guard let headerEnd = data.range(of: Data("\r\n\r\n".utf8)) else { return false }
+        guard let headerSection = String(data: data[..<headerEnd.lowerBound], encoding: .utf8) else { return false }
+        for line in headerSection.components(separatedBy: "\r\n").dropFirst() {
+            if let colonIdx = line.firstIndex(of: ":") {
+                let name = String(line[line.startIndex..<colonIdx]).trimmingCharacters(in: .whitespaces).lowercased()
+                let value = String(line[line.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces).lowercased()
+                if name == "expect", value == "100-continue" {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private func sendContinue(_ connection: NWConnection) {
+        let response = Data("HTTP/1.1 100 Continue\r\n\r\n".utf8)
+        connection.send(content: response, completion: .contentProcessed { _ in })
+    }
+
+    private func processRequest(request: HTTPRequest, connection: NWConnection, startedAt: Date) {
         let path = request.path.components(separatedBy: "?").first ?? request.path
         let method = request.method
 
@@ -351,6 +404,7 @@ final class ProxyServer: ObservableObject {
         guard let urlRequest = makeUpstreamRequest(provider: provider, path: "/responses",
                                                    body: body, isStreaming: isStreaming,
                                                    originalHeaders: originalRequest.headers) else {
+            circuitBreakerRegistry.releaseProbe(providerId: provider.id)
             recordRequest(method: originalRequest.method, path: originalRequest.path,
                          providerName: provider.name, status: 502, startedAt: startedAt,
                          error: "Invalid upstream URL")
@@ -443,6 +497,11 @@ final class ProxyServer: ObservableObject {
                 self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: "HTTP \(status)")
             } else if status >= 200 && status < 400 {
                 self.circuitBreakerRegistry.recordSuccess(providerId: provider.id)
+            } else {
+                // 4xx is a client fault, not a provider health signal — stay
+                // neutral but release the HalfOpen probe permit so the breaker
+                // isn't jammed waiting for an outcome that never comes.
+                self.circuitBreakerRegistry.releaseProbe(providerId: provider.id)
             }
 
             if status >= 400 {
@@ -481,6 +540,9 @@ final class ProxyServer: ObservableObject {
                     }
                     if status >= 500 {
                         self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: "HTTP \(status)")
+                    } else {
+                        // 4xx: client fault — stay neutral but release the probe.
+                        self.circuitBreakerRegistry.releaseProbe(providerId: provider.id)
                     }
                     self.recordRequest(method: originalRequest.method, path: originalRequest.path,
                                      providerName: provider.name, status: status, startedAt: startedAt,
@@ -530,6 +592,9 @@ final class ProxyServer: ObservableObject {
         startedAt: Date
     ) {
         guard var responsesRequest = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            // Malformed request never reached the upstream — release the probe
+            // permit so the HalfOpen breaker isn't jammed.
+            circuitBreakerRegistry.releaseProbe(providerId: provider.id)
             recordRequest(method: originalRequest.method, path: originalRequest.path,
                          providerName: provider.name, status: 400, startedAt: startedAt,
                          error: "Invalid JSON")
@@ -569,6 +634,7 @@ final class ProxyServer: ObservableObject {
         }
 
         guard let requestBody = try? JSONSerialization.data(withJSONObject: chatRequest) else {
+            circuitBreakerRegistry.releaseProbe(providerId: provider.id)
             recordRequest(method: originalRequest.method, path: originalRequest.path,
                          providerName: provider.name, status: 500, startedAt: startedAt,
                          error: "Failed to serialize converted request")
@@ -580,6 +646,7 @@ final class ProxyServer: ObservableObject {
         guard let urlRequest = makeUpstreamRequest(provider: provider, path: "/chat/completions",
                                                    body: requestBody, isStreaming: isStreaming,
                                                    originalHeaders: originalRequest.headers) else {
+            circuitBreakerRegistry.releaseProbe(providerId: provider.id)
             recordRequest(method: originalRequest.method, path: originalRequest.path,
                          providerName: provider.name, status: 502, startedAt: startedAt,
                          error: "Invalid upstream URL")
@@ -633,16 +700,19 @@ final class ProxyServer: ObservableObject {
             if case .rectified(let sanitizedBody) = rectification {
                 logger.info("Media rectifier triggered — retrying with sanitized request")
                 // Rebuild the converted request with sanitized body
-                if let sanitizedJSON = try? JSONSerialization.jsonObject(with: sanitizedBody) as? [String: Any] {
-                    var sanitizedRequest = request
-                    sanitizedRequest.httpBody = sanitizedBody
-                    // Re-convert and retry once
-                    self.simpleForwardWithConversion(request: sanitizedRequest, provider: provider,
-                                                   connection: connection, originalRequest: originalRequest,
-                                                   startedAt: startedAt, toolContext: toolContext,
-                                                   originalBody: sanitizedBody)
+                guard (try? JSONSerialization.jsonObject(with: sanitizedBody)) != nil else {
+                    // Should never happen — rectifier already validated JSON
+                    logger.error("Media rectifier produced invalid JSON")
                     return
                 }
+                var sanitizedRequest = request
+                sanitizedRequest.httpBody = sanitizedBody
+                // Re-convert and retry once
+                self.simpleForwardWithConversion(request: sanitizedRequest, provider: provider,
+                                               connection: connection, originalRequest: originalRequest,
+                                               startedAt: startedAt, toolContext: toolContext,
+                                               originalBody: sanitizedBody)
+                return
             }
 
             // Circuit breaker: record outcome
@@ -650,8 +720,12 @@ final class ProxyServer: ObservableObject {
                 self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: "HTTP \(status)")
             } else if status >= 200 && status < 400 {
                 self.circuitBreakerRegistry.recordSuccess(providerId: provider.id)
+            } else {
+                // 4xx is a client fault, not a provider health signal — stay
+                // neutral but release the HalfOpen probe permit so the breaker
+                // isn't jammed waiting for an outcome that never comes.
+                self.circuitBreakerRegistry.releaseProbe(providerId: provider.id)
             }
-            // 4xx errors don't affect circuit breaker (client fault, not provider fault)
 
             if status >= 400 {
                 // Try to convert Chat Completions error to Responses error
@@ -753,6 +827,9 @@ final class ProxyServer: ObservableObject {
                     }
                     if status >= 500 {
                         self.circuitBreakerRegistry.recordFailure(providerId: provider.id, error: "HTTP \(status)")
+                    } else {
+                        // 4xx: client fault — stay neutral but release the probe.
+                        self.circuitBreakerRegistry.releaseProbe(providerId: provider.id)
                     }
                     self.recordRequest(method: originalRequest.method, path: originalRequest.path,
                                      providerName: provider.name, status: status, startedAt: startedAt,
@@ -872,9 +949,31 @@ final class ProxyServer: ObservableObject {
     private func validateAuth(_ request: HTTPRequest) -> Bool {
         let expected = self.gatewayToken
         guard !expected.isEmpty else { return true }
-        let match = request.bearerToken() == expected
+        // Constant-time comparison so a local attacker cannot recover the
+        // gateway token byte-by-byte via response-timing side channels. The
+        // gateway token is the only credential protecting proxy access (which
+        // forwards the provider's API key upstream), so it must not leak timing.
+        let match = Self.constantTimeEquals(request.bearerToken(), expected)
         logger.info("Auth result: match=\(match)")
         return match
+    }
+
+    /// Compare two strings in constant time relative to the expected length.
+    /// Both the per-byte accumulation and the length check are folded into a
+    /// single result so neither the number of iterations nor the final branch
+    /// reveals where the first mismatch occurred.
+    private static func constantTimeEquals(_ a: String?, _ b: String) -> Bool {
+        // Collapse to a single UTF-8 byte view so the loop count is stable
+        // regardless of the attacker-controlled input length.
+        let lhs = Data((a ?? "").utf8)
+        let rhs = Data(b.utf8)
+
+        var diff: UInt8 = UInt8(truncatingIfNeeded: lhs.count ^ rhs.count)
+        let common = min(lhs.count, rhs.count)
+        for i in 0..<common {
+            diff |= lhs[i] ^ rhs[i]
+        }
+        return diff == 0
     }
 
     // MARK: - HTTP Parsing
@@ -902,17 +1001,93 @@ final class ProxyServer: ObservableObject {
             }
         }
 
-        let contentLength = headers
-            .first { $0.0.lowercased() == "content-length" }
-            .flatMap { Int($0.1) } ?? 0
-        guard contentLength >= 0 else { return nil }
-
         let bodyStart = headerEnd.upperBound
-        let bodyEnd = bodyStart + contentLength
-        guard data.count >= bodyEnd else { return nil }
-        let bodyData = Data(data[bodyStart..<bodyEnd])
+        let bodyData: Data
+
+        // Determine the framing. We support two body encodings:
+        //   • Content-Length: <n>  — fixed length
+        //   • Transfer-Encoding: chunked — RFC 7230 chunked bodies
+        // If a body declares neither (e.g. a GET), the body is empty.
+        let transferEncoding = headers
+            .first { $0.0.lowercased() == "transfer-encoding" }?
+            .1.lowercased() ?? ""
+
+        if transferEncoding.contains("chunked") {
+            guard let decoded = decodeChunkedBody(data[bodyStart...]) else {
+                // Chunked body not yet complete (or malformed) — keep reading.
+                return nil
+            }
+            bodyData = decoded
+        } else {
+            let contentLength = headers
+                .first { $0.0.lowercased() == "content-length" }
+                .flatMap { Int($0.1) } ?? 0
+            guard contentLength >= 0 else { return nil }
+
+            let bodyEnd = bodyStart + contentLength
+            guard data.count >= bodyEnd else { return nil }
+            bodyData = Data(data[bodyStart..<bodyEnd])
+        }
 
         return HTTPRequest(method: method, path: path, headers: headers, body: bodyData)
+    }
+
+    /// Decode an RFC 7230 chunked transfer-encoding body into its plain form.
+    /// Returns nil if the body is incomplete (the caller should keep reading);
+    /// returns an empty Data on malformed input so the request is rejected.
+    ///
+    /// Each chunk is:
+    ///     <hex size>\r\n
+    ///     <size bytes>\r\n
+    /// terminated by a zero-size chunk: 0\r\n\r\n
+    ///
+    /// Operates on raw bytes (not `String`) because chunk sizes are byte counts
+    /// and a multibyte UTF-8 sequence may be split across chunk boundaries —
+    /// decoding the framing as a `String` would fail on the lone leading byte.
+    private func decodeChunkedBody(_ data: Data) -> Data? {
+        var result = Data()
+        var cursor = data.startIndex
+        let end = data.endIndex
+        let crlf = Data([0x0D, 0x0A])     // \r\n
+        let semicolon: UInt8 = 0x3B        // ';'
+
+        while cursor < end {
+            // Read the chunk-size line up to CRLF.
+            guard let crlfRange = data.range(of: crlf, in: cursor..<end) else {
+                return nil // incomplete size line
+            }
+            // Chunk extensions (;ext=value) are allowed after the size; strip them.
+            let sizeEnd = data[cursor..<crlfRange.lowerBound].firstIndex(of: semicolon)
+                ?? crlfRange.lowerBound
+            // The size line is always ASCII hex; safe to decode as a String here.
+            guard let sizeHex = String(data: data[cursor..<sizeEnd], encoding: .ascii),
+                  let size = Int(sizeHex.trimmingCharacters(in: .whitespaces), radix: 16) else {
+                return Data() // malformed
+            }
+
+            cursor = crlfRange.upperBound
+
+            if size == 0 {
+                // Terminating zero-size chunk.
+                return result
+            }
+
+            // Need `size` bytes plus a trailing CRLF.
+            guard cursor + size + 2 <= end else {
+                return nil // chunk body incomplete
+            }
+            result.append(contentsOf: data[cursor..<(cursor + size)])
+            cursor += size
+
+            // Consume the trailing CRLF after the chunk data.
+            guard data[cursor] == 0x0D, data[cursor + 1] == 0x0A else {
+                return Data() // malformed
+            }
+            cursor += 2
+        }
+
+        // Ran out of data before hitting the zero-size terminator.
+        return nil
     }
 
     // MARK: - Response Sending

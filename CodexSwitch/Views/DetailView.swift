@@ -9,6 +9,7 @@ enum DetailTab: String, CaseIterable {
 
 struct DetailView: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var l10n = Localization.shared
     @State private var selectedTab: DetailTab = .status
 
     var body: some View {
@@ -16,7 +17,7 @@ struct DetailView: View {
             // Top segmented tab bar (à la CD-Switch)
             Picker("", selection: $selectedTab) {
                 ForEach(DetailTab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    Text(l10n.tr(tab.rawValue)).tag(tab)
                 }
             }
             .pickerStyle(.segmented)
@@ -52,11 +53,12 @@ struct DetailView: View {
 
 struct LogsView: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var l10n = Localization.shared
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Request Logs")
+                Text(l10n.tr("Request Logs"))
                     .font(.headline)
                 Spacer()
                 Button {
@@ -65,7 +67,7 @@ struct LogsView: View {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.borderless)
-                .help("Clear request log")
+                .help(l10n.tr("Clear request log"))
                 .disabled(appState.requestLogs.isEmpty)
             }
             .padding(.horizontal, 20)
@@ -76,7 +78,7 @@ struct LogsView: View {
             if appState.requestLogs.isEmpty {
                 VStack {
                     Spacer()
-                    Text("No requests yet")
+                    Text(l10n.tr("No requests yet"))
                         .foregroundStyle(.secondary)
                     Spacer()
                 }

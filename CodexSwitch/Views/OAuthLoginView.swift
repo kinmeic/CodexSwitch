@@ -6,11 +6,12 @@ import AppKit
 /// host view is responsible for action buttons.
 struct ChatGPTLoginStatus: View {
     @ObservedObject var oauth: CodexOAuthManager
+    @ObservedObject private var l10n = Localization.shared
 
     var body: some View {
         switch oauth.phase {
         case .idle:
-            Text("Not signed in")
+            Text(l10n.tr("Not signed in"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         case .awaitingUser(let code, let verificationURL, let expiresAt):
@@ -18,7 +19,7 @@ struct ChatGPTLoginStatus: View {
         case .exchanging:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text("Exchanging code for tokens…")
+                Text(l10n.tr("Exchanging code for tokens…"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -27,7 +28,7 @@ struct ChatGPTLoginStatus: View {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                    Text("Signed in")
+                    Text(l10n.tr("Signed in"))
                         .font(.subheadline.weight(.semibold))
                 }
                 if let email = account.email, !email.isEmpty {
@@ -35,7 +36,7 @@ struct ChatGPTLoginStatus: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Text("Account: \(account.accountId.prefix(8))…")
+                Text(String(format: l10n.tr("Account: %@…"), String(account.accountId.prefix(8))))
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
             }
@@ -44,7 +45,7 @@ struct ChatGPTLoginStatus: View {
                 HStack(spacing: 6) {
                     Image(systemName: "xmark.octagon")
                         .foregroundStyle(.red)
-                    Text("Sign-in failed")
+                    Text(l10n.tr("Sign-in failed"))
                         .font(.subheadline.weight(.semibold))
                 }
                 Text(message)
@@ -56,7 +57,7 @@ struct ChatGPTLoginStatus: View {
 
     private func awaitingView(code: String, verificationURL: URL, expiresAt: Date) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Enter this code at OpenAI")
+            Text(l10n.tr("Enter this code at OpenAI"))
                 .font(.subheadline.weight(.semibold))
             Text(code)
                 .font(.system(.body, design: .monospaced).bold())
@@ -64,11 +65,12 @@ struct ChatGPTLoginStatus: View {
                 .padding(6)
                 .background(Color.secondary.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
-            Button("Open verification page") {
+            Button(l10n.tr("Open verification page")) {
                 NSWorkspace.shared.open(verificationURL)
             }
             .buttonStyle(.borderedProminent)
-            Text("Expires \(expiresAt.formatted(date: .omitted, time: .shortened)). Waiting for approval…")
+            Text(String(format: l10n.tr("Expires %@. Waiting for approval…"),
+                        expiresAt.formatted(date: .omitted, time: .shortened)))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

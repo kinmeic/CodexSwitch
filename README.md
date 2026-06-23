@@ -95,11 +95,11 @@ CodexSwitch manages three files in `~/.codex/`:
 
 | File | Purpose |
 |---|---|
-| `auth.json` | API key storage (`OPENAI_API_KEY`) |
+| `auth.json` | API key storage (`OPENAI_API_KEY`) or ChatGPT OAuth tokens |
 | `config.toml` | Provider routing, model selection, `wire_api`, auth config |
-| `cc-switch-model-catalog.json` | Model definitions for Codex CLI's model picker |
+| `codex-switch-model-catalog.json` | Model definitions for Codex CLI's model picker |
 
-When switching back to **OpenAI Official**, `config.toml` and the catalog are removed while `auth.json` is preserved (protecting your ChatGPT login cache).
+When switching back to **OpenAI Official**, `config.toml` is pruned (managed keys/sections removed) while `auth.json` is preserved (protecting your ChatGPT login cache).
 
 ## Reasoning Configuration
 
@@ -120,14 +120,20 @@ For Chat Completions providers, CodexSwitch maps Codex's `reasoning.effort` to p
 CodexSwitch/
 ├── Models/              CodexProvider, CodexApiFormat, CodexCatalogModel, CodexChatReasoning
 ├── ViewModels/          AppState (central state + persistence + proxy lifecycle)
-├── Views/               Status, Logs, Providers, Settings, MenuBar
+├── Views/               Status, Logs, Providers, Settings, MenuBar, OAuth
 ├── Services/
 │   ├── CodexConfigManager     Read/write ~/.codex/ config files
+│   ├── CodexOAuthManager      ChatGPT device-code OAuth flow + Keychain storage
 │   ├── ProxyServer            NWListener-based HTTP proxy (port 16827)
 │   ├── ProtocolConverter      Responses ↔ Chat Completions (request + response + errors)
 │   ├── StreamingConverter     Chat Completions SSE → Responses API event stream
 │   ├── ChatHistoryStore       Cross-turn function_call LRU cache (512 entries)
-│   └── PresetProviders        Built-in OpenAI Official preset
+│   ├── CircuitBreaker         Per-provider failure isolation (Closed/Open/HalfOpen)
+│   ├── RequestRectifier       Media sanitization + retry on image rejection
+│   ├── CodexToolContext       Flatten/restore all 4 Responses tool kinds
+│   ├── InlineThinkSplitter    Extract <think> tags from streaming content
+│   ├── PresetProviders        Built-in OpenAI Official preset
+│   └── Localization           Runtime in-app i18n (English + Simplified Chinese)
 ├── CodexSwitchApp.swift       @main entry + AppDelegate
 └── AppEnvironment.swift       UserDefaults suite + paths + NetworkSessionManager
 ```

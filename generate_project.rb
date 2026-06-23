@@ -11,6 +11,7 @@ end
 swift_files = {
   "CodexSwitchApp" => "CodexSwitch/CodexSwitchApp.swift",
   "AppEnvironment" => "CodexSwitch/AppEnvironment.swift",
+  "Localization" => "CodexSwitch/Localization/Localization.swift",
   "CodexProvider" => "CodexSwitch/Models/CodexProvider.swift",
   "AppState" => "CodexSwitch/ViewModels/AppState.swift",
   "ProxyServer" => "CodexSwitch/Services/ProxyServer.swift",
@@ -63,6 +64,7 @@ group_models = gen_id
 group_viewmodels = gen_id
 group_views = gen_id
 group_services = gen_id
+group_localization = gen_id
 
 # Project and target
 project_id = gen_id
@@ -105,6 +107,9 @@ groups_section = ""
 # Models group
 groups_section += "		#{group_models} /* Models */ = {\n			isa = PBXGroup;\n			children = (\n				#{file_refs["CodexProvider"]} /* CodexProvider.swift */,\n			);\n			path = Models;\n			sourceTree = \"<group>\";\n		};\n"
 
+# Localization group
+groups_section += "		#{group_localization} /* Localization */ = {\n			isa = PBXGroup;\n			children = (\n				#{file_refs["Localization"]} /* Localization.swift */,\n			);\n			path = Localization;\n			sourceTree = \"<group>\";\n		};\n"
+
 # ViewModels group
 groups_section += "		#{group_viewmodels} /* ViewModels */ = {\n			isa = PBXGroup;\n			children = (\n				#{file_refs["AppState"]} /* AppState.swift */,\n			);\n			path = ViewModels;\n			sourceTree = \"<group>\";\n		};\n"
 
@@ -115,7 +120,7 @@ groups_section += "		#{group_views} /* Views */ = {\n			isa = PBXGroup;\n			chil
 groups_section += "		#{group_services} /* Services */ = {\n			isa = PBXGroup;\n			children = (\n				#{file_refs["ProxyServer"]} /* ProxyServer.swift */,\n				#{file_refs["CodexConfigManager"]} /* CodexConfigManager.swift */,\n				#{file_refs["ProtocolConverter"]} /* ProtocolConverter.swift */,\n				#{file_refs["StreamingConverter"]} /* StreamingConverter.swift */,\n				#{file_refs["InlineThinkSplitter"]} /* InlineThinkSplitter.swift */,\n				#{file_refs["ChatHistoryStore"]} /* ChatHistoryStore.swift */,\n				#{file_refs["CodexOAuthManager"]} /* CodexOAuthManager.swift */,\n				#{file_refs["PresetProviders"]} /* PresetProviders.swift */,\n				#{file_refs["CodexToolContext"]} /* CodexToolContext.swift */,\n				#{file_refs["CircuitBreaker"]} /* CircuitBreaker.swift */,\n				#{file_refs["RequestRectifier"]} /* RequestRectifier.swift */,\n				#{file_refs["Clipboard"]} /* Clipboard.swift */,\n			);\n			path = Services;\n			sourceTree = \"<group>\";\n		};\n"
 
 # Source group (main)
-groups_section += "		#{group_source} /* CodexSwitch */ = {\n			isa = PBXGroup;\n			children = (\n				#{file_refs["CodexSwitchApp"]} /* CodexSwitchApp.swift */,\n				#{file_refs["AppEnvironment"]} /* AppEnvironment.swift */,\n				#{group_models} /* Models */,\n				#{group_viewmodels} /* ViewModels */,\n				#{group_views} /* Views */,\n				#{group_services} /* Services */,\n				#{file_refs["Assets"]} /* Assets.xcassets */,\n				#{file_refs["Info.plist"]} /* Info.plist */,\n				#{file_refs["Entitlements"]} /* CodexSwitch.entitlements */,\n			);\n			path = CodexSwitch;\n			sourceTree = \"<group>\";\n		};\n"
+groups_section += "		#{group_source} /* CodexSwitch */ = {\n			isa = PBXGroup;\n			children = (\n				#{file_refs["CodexSwitchApp"]} /* CodexSwitchApp.swift */,\n				#{file_refs["AppEnvironment"]} /* AppEnvironment.swift */,\n				#{group_models} /* Models */,\n				#{group_viewmodels} /* ViewModels */,\n				#{group_views} /* Views */,\n				#{group_services} /* Services */,\n				#{group_localization} /* Localization */,\n				#{file_refs["Assets"]} /* Assets.xcassets */,\n				#{file_refs["Info.plist"]} /* Info.plist */,\n				#{file_refs["Entitlements"]} /* CodexSwitch.entitlements */,\n			);\n			path = CodexSwitch;\n			sourceTree = \"<group>\";\n		};\n"
 
 # Main group
 groups_section += "		#{group_main} = {\n			isa = PBXGroup;\n			children = (\n				#{group_source} /* CodexSwitch */,\n			);\n			sourceTree = \"<group>\";\n		};\n"
@@ -205,7 +210,7 @@ target_settings = {
   "INFOPLIST_KEY_NSHumanReadableCopyright" => "",
   "LD_RUNPATH_SEARCH_PATHS" => ["$(inherited)", "@executable_path/../Frameworks"],
   "MACOSX_DEPLOYMENT_TARGET" => "13.0",
-  "MARKETING_VERSION" => "1.4.1",
+  "MARKETING_VERSION" => "1.4.2",
   "PRODUCT_BUNDLE_IDENTIFIER" => "com.codex.switch",
   "PRODUCT_NAME" => "$(TARGET_NAME)",
   "SWIFT_EMIT_LOC_STRINGS" => "YES",
