@@ -26,8 +26,13 @@ enum AppEnvironment {
     }
 
     static var modelCatalogPath: String {
-        "\(codexConfigPath)/cc-switch-model-catalog.json"
+        "\(codexConfigPath)/\(CodexCatalogFilename)"
     }
+
+    /// The filename used for the model catalog JSON in ~/.codex/.
+    /// Always written as a relative path in config.toml so Codex CLI resolves
+    /// it relative to the config directory (matching cc-switch behaviour).
+    static let CodexCatalogFilename = "codex-switch-model-catalog.json"
 
     static var modelsCachePath: String {
         "\(codexConfigPath)/models_cache.json"

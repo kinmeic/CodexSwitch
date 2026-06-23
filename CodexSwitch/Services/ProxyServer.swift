@@ -213,28 +213,72 @@ final class ProxyServer: ObservableObject {
     // MARK: - Models Handler
 
     /// GET /models or GET /v1/models — Codex CLI probes this endpoint at startup
-    /// for reachability check. Return the cc-switch-managed model catalog file
-    /// so the format always matches what Codex expects.
+    /// for reachability check. Return the codex-switch-managed model catalog
+    /// file so the format always matches what Codex expects.
+    ///
+    /// Stale-guard: only serves the catalog when config.toml still references
+    /// our `model_catalog_json` filename, so we don't serve stale data after
+    /// the user has switched to a different tool or restored official config.
     private func handleModels(request: HTTPRequest, connection: NWConnection, startedAt: Date) {
-        guard validateAuth(request) else {
-            recordRequest(method: request.method, path: request.path, providerName: nil, status: 401, startedAt: startedAt, error: "Unauthorized")
-            sendResponse(connection: connection, status: 401, body: errorBody("Unauthorized"))
-            return
-        }
+        // No auth check — /models is a static catalog with no sensitive data.
+        // Codex CLI probes this for reachability and may use ChatGPT tokens
+        // from auth.json instead of the gateway token, so requiring auth
+        // would cause spurious 401s.
+
+        // Migrate old filename if needed
+        Self.migrateCatalogFilenameIfNeeded()
 
         let catalogPath = AppEnvironment.modelCatalogPath
         let catalog: Data
 
-        if FileManager.default.fileExists(atPath: catalogPath),
+        // Check if config.toml references our catalog filename
+        if Self.configTOMLReferencesOurCatalog(),
+           FileManager.default.fileExists(atPath: catalogPath),
            let data = FileManager.default.contents(atPath: catalogPath) {
             catalog = data
         } else {
-            // Return empty catalog if file doesn't exist
             catalog = Data("{\"models\":[]}".utf8)
         }
 
         recordRequest(method: request.method, path: request.path, providerName: activeProvider?.name, status: 200, startedAt: startedAt)
         sendResponse(connection: connection, status: 200, body: catalog, contentType: "application/json")
+    }
+
+    /// Check if config.toml's model_catalog_json points to our catalog filename.
+    private static func configTOMLReferencesOurCatalog() -> Bool {
+        let configPath = AppEnvironment.configTOMLPath
+        guard let content = try? String(contentsOfFile: configPath, encoding: .utf8) else { return false }
+        // Match both old and new filenames
+        return content.contains(AppEnvironment.CodexCatalogFilename) ||
+               content.contains("cc-switch-model-catalog.json")
+    }
+
+    /// One-shot migration: rename old cc-switch-model-catalog.json to the new
+    /// codex-switch-model-catalog.json filename. Also rewrites config.toml
+    /// if it still references the old name.
+    private static var catalogMigrated = false
+    private static func migrateCatalogFilenameIfNeeded() {
+        guard !catalogMigrated else { return }
+        catalogMigrated = true
+
+        let fm = FileManager.default
+        let oldPath = "\(AppEnvironment.codexConfigPath)/cc-switch-model-catalog.json"
+        let newPath = AppEnvironment.modelCatalogPath
+
+        if fm.fileExists(atPath: oldPath), !fm.fileExists(atPath: newPath) {
+            try? fm.moveItem(atPath: oldPath, toPath: newPath)
+        }
+
+        // Rewrite config.toml if it references the old filename
+        let configPath = AppEnvironment.configTOMLPath
+        if var content = try? String(contentsOfFile: configPath, encoding: .utf8),
+           content.contains("cc-switch-model-catalog.json") {
+            content = content.replacingOccurrences(
+                of: "cc-switch-model-catalog.json",
+                with: AppEnvironment.CodexCatalogFilename
+            )
+            try? content.write(toFile: configPath, atomically: true, encoding: .utf8)
+        }
     }
 
     // MARK: - Responses Handler

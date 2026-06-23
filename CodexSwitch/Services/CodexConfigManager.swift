@@ -99,7 +99,7 @@ enum CodexConfigManager {
             codexConfigPath: base,
             authJSONPath: "\(base)/auth.json",
             configTOMLPath: "\(base)/config.toml",
-            modelCatalogPath: "\(base)/cc-switch-model-catalog.json"
+            modelCatalogPath: "\(base)/\(AppEnvironment.CodexCatalogFilename)"
         )
     }
 
@@ -164,11 +164,11 @@ enum CodexConfigManager {
             toml += "model_auto_compact_token_limit = \(compactLimit)\n"
         }
 
-        // Add model catalog path if provider has models
+        // Add model catalog path if provider has models — write only the
+        // filename (relative), not the absolute path. Codex CLI resolves it
+        // relative to the config directory; absolute paths are not supported.
         if !provider.modelCatalog.isEmpty {
-            let catalogPath = AppEnvironment.modelCatalogPath
-            let escapedCatalogPath = tomlEscape(catalogPath)
-            toml += "model_catalog_json = \"\(escapedCatalogPath)\"\n"
+            toml += "model_catalog_json = \"\(AppEnvironment.CodexCatalogFilename)\"\n"
         }
 
         // [features] goals
