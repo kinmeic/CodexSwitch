@@ -456,20 +456,21 @@ final class AppState: ObservableObject {
             return
         }
 
+        // Determine if baseURL already ends with a version segment (/v1, /v4, etc.)
+        // If so, the endpoint is just /chat/completions or /responses (no /v1 prefix).
+        // If not, we add /v1 as the standard version path.
+        let baseURLTrimmed = provider.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let hasVersionSegment = baseURLTrimmed.range(of: #"/v\d+$"#, options: .regularExpression) != nil
+
         let endpoint: String
         if provider.apiFormat == .chatCompletions {
-            endpoint = "/v1/chat/completions"
+            endpoint = hasVersionSegment ? "/chat/completions" : "/v1/chat/completions"
         } else {
-            endpoint = "/v1/responses"
+            endpoint = hasVersionSegment ? "/responses" : "/v1/responses"
         }
 
-        // Normalize baseURL: strip trailing /v1 or /v1/ to avoid double /v1/v1/
+        // Normalize baseURL: strip trailing slashes only
         var baseURL = provider.baseURL
-        if baseURL.hasSuffix("/v1") {
-            baseURL = String(baseURL.dropLast(3))
-        } else if baseURL.hasSuffix("/v1/") {
-            baseURL = String(baseURL.dropLast(4))
-        }
         if baseURL.hasSuffix("/") {
             baseURL = String(baseURL.dropLast())
         }

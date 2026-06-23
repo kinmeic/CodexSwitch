@@ -348,7 +348,7 @@ final class ProxyServer: ObservableObject {
         originalRequest: HTTPRequest,
         startedAt: Date
     ) {
-        guard let urlRequest = makeUpstreamRequest(provider: provider, path: "/v1/responses",
+        guard let urlRequest = makeUpstreamRequest(provider: provider, path: "/responses",
                                                    body: body, isStreaming: isStreaming,
                                                    originalHeaders: originalRequest.headers) else {
             recordRequest(method: originalRequest.method, path: originalRequest.path,
@@ -369,18 +369,20 @@ final class ProxyServer: ObservableObject {
 
     private func makeUpstreamRequest(provider: CodexProvider, path: String, body: Data,
                                      isStreaming: Bool, originalHeaders: [(String, String)]? = nil) -> URLRequest? {
-        // Normalize baseURL: strip trailing slashes and any embedded /v1 suffix
-        // so that concatenation with a leading-slash path never produces "//".
-        var base = provider.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if base.hasSuffix("/v1/") {
-            base = String(base.dropLast(4))
-        } else if base.hasSuffix("/v1") {
-            base = String(base.dropLast(3))
+        // Determine if baseURL already ends with a version segment (/v1, /v4, etc.)
+        // If so, the endpoint is just the path (e.g., /responses, /chat/completions).
+        // If not, we add /v1 as the standard version path.
+        let baseURLTrimmed = provider.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let hasVersionSegment = baseURLTrimmed.range(of: #"/v\d+$"#, options: .regularExpression) != nil
+        
+        let endpoint: String
+        if hasVersionSegment {
+            endpoint = path
+        } else {
+            endpoint = "/v1\(path)"
         }
-        while base.hasSuffix("/") {
-            base = String(base.dropLast())
-        }
-        guard let url = URL(string: base + path) else { return nil }
+        
+        guard let url = URL(string: baseURLTrimmed + endpoint) else { return nil }
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
@@ -575,7 +577,7 @@ final class ProxyServer: ObservableObject {
             return
         }
 
-        guard let urlRequest = makeUpstreamRequest(provider: provider, path: "/v1/chat/completions",
+        guard let urlRequest = makeUpstreamRequest(provider: provider, path: "/chat/completions",
                                                    body: requestBody, isStreaming: isStreaming,
                                                    originalHeaders: originalRequest.headers) else {
             recordRequest(method: originalRequest.method, path: originalRequest.path,
