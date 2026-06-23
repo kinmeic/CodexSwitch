@@ -1,4 +1,7 @@
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "com.codex.switch", category: "toolcontext")
 
 // MARK: - Tool Kind
 
@@ -210,6 +213,7 @@ struct CodexToolContext {
             collectToolSearchOutputTools(input, ctx: &ctx)
         }
 
+        logger.debug("Built tool context with \(ctx.specs.count) registered tools")
         return ctx
     }
 

@@ -28,6 +28,9 @@ final class CircuitBreaker {
     private(set) var lastError: String?
     private(set) var openedAt: Date?
 
+    /// Guards against multiple concurrent probe requests in the half-open state.
+    private var isProbing: Bool = false
+
     let failureThreshold: Int
     let recoveryTimeout: TimeInterval
     let successThreshold: Int
@@ -60,12 +63,17 @@ final class CircuitBreaker {
             if let openedAt = openedAt, Date().timeIntervalSince(openedAt) >= recoveryTimeout {
                 state = .halfOpen
                 consecutiveSuccesses = 0
+                isProbing = true
                 return true
             }
             return false
         case .halfOpen:
-            // Allow one probe request at a time
-            return consecutiveSuccesses == 0
+            // Only allow one probe request at a time
+            if isProbing {
+                return false
+            }
+            isProbing = true
+            return true
         }
     }
 
@@ -77,6 +85,7 @@ final class CircuitBreaker {
         consecutiveFailures = 0
         consecutiveSuccesses += 1
         lastSuccessAt = Date()
+        isProbing = false
 
         if state == .halfOpen, consecutiveSuccesses >= successThreshold {
             state = .closed
@@ -93,6 +102,7 @@ final class CircuitBreaker {
         consecutiveFailures += 1
         lastFailureAt = Date()
         lastError = error
+        isProbing = false
 
         switch state {
         case .closed:
@@ -119,6 +129,7 @@ final class CircuitBreaker {
         lastFailureAt = nil
         lastError = nil
         openedAt = nil
+        isProbing = false
     }
 
     private func checkAvailability() -> Bool {

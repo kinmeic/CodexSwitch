@@ -20,12 +20,15 @@ final class ChatHistoryStore {
             if item["type"] as? String == "function_call",
                let callId = item["call_id"] as? String {
                 cache[callId] = item
+                // Remove previous occurrence to prevent accessOrder from growing with duplicates
+                accessOrder.removeAll { $0 == callId }
                 accessOrder.append(callId)
             }
         }
 
         // Cache entire response by response_id
         cache[responseId] = response
+        accessOrder.removeAll { $0 == responseId }
         accessOrder.append(responseId)
 
         // Evict old entries

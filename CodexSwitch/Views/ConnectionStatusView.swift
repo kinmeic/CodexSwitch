@@ -45,8 +45,7 @@ struct ConnectionStatusView: View {
                             .textSelection(.enabled)
                         Spacer()
                         Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString("http://127.0.0.1:\(String(format: "%d", appState.proxyPort))", forType: .string)
+                            Clipboard.copy("http://127.0.0.1:\(String(format: "%d", appState.proxyPort))")
                         } label: {
                             Image(systemName: "doc.on.doc")
                         }
@@ -77,8 +76,7 @@ struct ConnectionStatusView: View {
                             .truncationMode(.middle)
                         Spacer()
                         Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(appState.gatewayToken, forType: .string)
+                            Clipboard.copy(appState.gatewayToken)
                         } label: {
                             Image(systemName: "doc.on.doc")
                         }

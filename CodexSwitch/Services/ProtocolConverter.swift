@@ -1,4 +1,7 @@
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "com.codex.switch", category: "converter")
 
 final class ProtocolConverter {
 
@@ -10,9 +13,7 @@ final class ProtocolConverter {
         toolContext: inout CodexToolContext
     ) -> [String: Any] {
         var result: [String: Any] = [:]
-
-        // Map model
-        result["model"] = body["model"] as? String ?? "gpt-4"
+        let model = body["model"] as? String ?? "gpt-4"
 
         // Map instructions -> system message
         var messages: [[String: Any]] = []
@@ -29,7 +30,7 @@ final class ProtocolConverter {
         }
         // Strip private (`_`-prefixed) fields from every message so internal
         // metadata the Codex CLI attaches never leaks to the upstream provider.
-        messages = messages.map { Self.stripPrivateParams($0) as! [String: Any] }
+        messages = messages.compactMap { Self.stripPrivateParams($0) as? [String: Any] }
 
         // Collapse system messages to head (MiniMax compatibility)
         let systemMessages = messages.filter { ($0["role"] as? String) == "system" }
@@ -74,6 +75,7 @@ final class ProtocolConverter {
             applyReasoningConfig(config, to: &result, from: body)
         }
 
+        logger.debug("Converted Responses→ChatCompletions model=\(model) tools=\(result["tools"] is [[String: Any]] ? "\((result["tools"] as? [[String: Any]] ?? []).count)" : "0")")
         return result
     }
 
@@ -320,11 +322,11 @@ final class ProtocolConverter {
         }
     }
 
-    private func mapEffortValue(_ effort: String, mode: String?) -> String {
+    private func mapEffortValue(_ effort: String, mode: CodexEffortValueMode?) -> String {
         guard let mode = mode else { return effort }
 
         switch mode {
-        case "deepseek":
+        case .deepseek:
             switch effort.lowercased() {
             case "minimal", "low": return "low"
             case "medium", "high": return "high"
@@ -332,14 +334,14 @@ final class ProtocolConverter {
             default: return effort
             }
 
-        case "low_high":
+        case .lowHigh:
             switch effort.lowercased() {
             case "minimal", "low", "medium": return "low"
             case "high", "max", "xhigh": return "high"
             default: return effort
             }
 
-        case "openrouter":
+        case .openrouter:
             switch effort.lowercased() {
             case "minimal": return "minimal"
             case "low": return "low"
@@ -348,9 +350,6 @@ final class ProtocolConverter {
             case "max", "xhigh": return "xhigh"
             default: return effort
             }
-
-        default:
-            return effort
         }
     }
 
@@ -372,6 +371,7 @@ final class ProtocolConverter {
 
         guard let choices = body["choices"] as? [[String: Any]],
               let firstChoice = choices.first else {
+            logger.warning("chatCompletionToResponse: no choices in response")
             result["status"] = "failed"
             result["error"] = ["message": "No choices in response", "type": "server_error"]
             return result

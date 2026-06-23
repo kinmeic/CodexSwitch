@@ -5,6 +5,21 @@ import os.log
 
 private let logger = Logger(subsystem: "com.codex.switch", category: "app")
 
+/// Central application state. ObservableObject published to SwiftUI views.
+///
+/// ## Concurrency Strategy
+/// - **AppState / ProxyServer**: UI-bound ObservableObjects. Mutations that
+///   affect published properties are dispatched to `DispatchQueue.main` so
+///   SwiftUI receives updates on the main actor.
+/// - **CircuitBreaker / ChatHistoryStore / NetworkSessionManager**: Pure data
+///   structures guarded by `NSLock`. They are not observable and may be
+///   accessed from any queue (proxy networking, timers, etc.).
+/// - **CodexConfigManager / CodexOAuthManager**: Stateless utilities that
+///   perform synchronous I/O and are safe to call from any context.
+///
+/// This split keeps UI reactivity (main-queue dispatch) separate from
+/// high-throughput data operations (lock-guarded), avoiding main-thread
+/// contention during proxy traffic.
 final class AppState: ObservableObject {
     static let shared = AppState()
 
@@ -82,7 +97,11 @@ final class AppState: ObservableObject {
         let configPath = AppEnvironment.configTOMLPath
         guard FileManager.default.fileExists(atPath: configPath) else { return false }
         guard let content = try? String(contentsOfFile: configPath, encoding: .utf8) else { return false }
-        return content.contains(provider.name)
+        // Use word-boundary matching so "open" doesn't false-positive on "openai"
+        let escaped = NSRegularExpression.escapedPattern(for: provider.name)
+        guard let regex = try? NSRegularExpression(pattern: "\\b\(escaped)\\b") else { return false }
+        let range = NSRange(content.startIndex..., in: content)
+        return regex.firstMatch(in: content, range: range) != nil
     }
 
     var isDirectMode: Bool {
@@ -128,12 +147,12 @@ final class AppState: ObservableObject {
         NetworkSessionManager.shared.updateProxyURL(outboundProxyURL)
         proxyServer.injectPromptCacheKey = injectPromptCacheKey
 
-        // Bind proxy state
+        // Bind proxy state — @Published on both sides means assignment
+        // already triggers objectWillChange; no manual send needed.
         proxyServer.$running
             .receive(on: DispatchQueue.main)
             .sink { [weak self] running in
                 self?.proxyRunning = running
-                self?.objectWillChange.send()
             }
             .store(in: &cancellables)
 
@@ -141,7 +160,6 @@ final class AppState: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] logs in
                 self?.requestLogs = logs
-                self?.objectWillChange.send()
             }
             .store(in: &cancellables)
     }
@@ -291,7 +309,16 @@ final class AppState: ObservableObject {
         }
 
         DispatchQueue.main.async { [weak self] in
-            self?.startProxy()
+            guard let self else { return }
+            if self.proxyRunning {
+                self.startProxy()
+            } else if let provider = self.activeProvider,
+                      !provider.isOfficial,
+                      provider.apiFormat == .responses,
+                      self.isApplied {
+                // Direct mode: re-apply config.toml with updated port even if proxy isn't running
+                try? CodexConfigManager.applyProvider(provider, port: self.proxyPort, gatewayToken: self.gatewayToken, preserveOfficialAuth: self.preserveOfficialAuth)
+            }
         }
     }
 

@@ -14,6 +14,28 @@ enum CodexApiFormat: String, Codable, CaseIterable {
     }
 }
 
+// MARK: - Effort Value Mode
+
+/// Platform-specific effort value mapping dialects. Each mode defines how
+/// Codex's standard effort levels (low/medium/high) translate to the
+/// upstream provider's reasoning effort parameter.
+enum CodexEffortValueMode: String, Codable, CaseIterable {
+    /// DeepSeek-style: low/medium→low, high→high, max→max (three tiers collapsed to two + max)
+    case deepseek
+    /// Low/High-style: minimal/low/medium→low, high/max/xhigh→high (two tiers)
+    case lowHigh
+    /// OpenRouter-style: passthrough with max→xhigh (OpenRouter rejects "max")
+    case openrouter
+
+    var displayName: String {
+        switch self {
+        case .deepseek: return "DeepSeek"
+        case .lowHigh: return "Low/High"
+        case .openrouter: return "OpenRouter"
+        }
+    }
+}
+
 // MARK: - Chat Reasoning Configuration
 
 struct CodexChatReasoning: Codable, Equatable {
@@ -21,7 +43,7 @@ struct CodexChatReasoning: Codable, Equatable {
     var supportsEffort: Bool
     var thinkingParam: String       // "thinking" | "enable_thinking" | "reasoning_split"
     var effortParam: String         // "reasoning_effort" | "reasoning.effort" | "none"
-    var effortValueMode: String?    // "deepseek" | "low_high" | "openrouter" | nil
+    var effortValueMode: CodexEffortValueMode?    // maps effort values per platform dialect
     var outputFormat: String        // "reasoning_content" | "reasoning_details" | "reasoning"
 
     static let `default` = CodexChatReasoning(
@@ -38,7 +60,7 @@ struct CodexChatReasoning: Codable, Equatable {
         supportsEffort: true,
         thinkingParam: "thinking",
         effortParam: "reasoning_effort",
-        effortValueMode: "deepseek",
+        effortValueMode: .deepseek,
         outputFormat: "reasoning_content"
     )
 
@@ -97,7 +119,7 @@ struct CodexChatReasoning: Codable, Equatable {
         supportsEffort: true,
         thinkingParam: "thinking",       // unused (OpenRouter has no thinking flag)
         effortParam: "reasoning.effort",
-        effortValueMode: "openrouter",   // clamps max→xhigh (OpenRouter rejects "max")
+        effortValueMode: .openrouter,   // clamps max→xhigh (OpenRouter rejects "max")
         outputFormat: "reasoning_content"
     )
 
@@ -137,9 +159,15 @@ struct CodexProvider: Identifiable, Codable, Equatable {
     var modelCatalog: [CodexCatalogModel]
     var chatReasoning: CodexChatReasoning?
     var isOfficial: Bool
+    /// Model used for code review tasks (e.g. `gpt-5.5`). Written to config.toml
+    /// as `review_model`. Empty string means the field is omitted.
+    var reviewModel: String
+    /// Enable Goal Mode (`[features] goals = true` in config.toml).
+    var goalsEnabled: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, name, baseURL, apiKey, apiFormat, modelCatalog, chatReasoning, isOfficial
+        case id, name, baseURL, apiKey, apiFormat, modelCatalog, chatReasoning, isOfficial,
+             reviewModel, goalsEnabled
     }
 
     init(
@@ -150,7 +178,9 @@ struct CodexProvider: Identifiable, Codable, Equatable {
         apiFormat: CodexApiFormat = .responses,
         modelCatalog: [CodexCatalogModel] = [],
         chatReasoning: CodexChatReasoning? = nil,
-        isOfficial: Bool = false
+        isOfficial: Bool = false,
+        reviewModel: String = "gpt-5.5",
+        goalsEnabled: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -160,6 +190,8 @@ struct CodexProvider: Identifiable, Codable, Equatable {
         self.modelCatalog = modelCatalog
         self.chatReasoning = chatReasoning
         self.isOfficial = isOfficial
+        self.reviewModel = reviewModel
+        self.goalsEnabled = goalsEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -172,6 +204,8 @@ struct CodexProvider: Identifiable, Codable, Equatable {
         modelCatalog = try container.decodeIfPresent([CodexCatalogModel].self, forKey: .modelCatalog) ?? []
         chatReasoning = try container.decodeIfPresent(CodexChatReasoning.self, forKey: .chatReasoning)
         isOfficial = try container.decodeIfPresent(Bool.self, forKey: .isOfficial) ?? false
+        reviewModel = try container.decodeIfPresent(String.self, forKey: .reviewModel) ?? "gpt-5.5"
+        goalsEnabled = try container.decodeIfPresent(Bool.self, forKey: .goalsEnabled) ?? false
     }
 
     /// The reasoning dialect to apply for this provider. Platform rules take

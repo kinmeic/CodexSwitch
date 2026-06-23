@@ -1,4 +1,7 @@
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "com.codex.switch", category: "rectifier")
 
 /// Detects specific upstream error patterns and rewrites the request body to
 /// fix them, then signals the proxy to retry on the same provider.
@@ -34,6 +37,8 @@ struct RequestRectifier {
         guard isImageRejectionError(errorMessage) else {
             return .noRectification
         }
+
+        logger.info("Detected image rejection error from upstream: \(errorMessage)")
 
         // Parse and sanitize the request body
         guard var json = try? JSONSerialization.jsonObject(with: requestBody) as? [String: Any] else {

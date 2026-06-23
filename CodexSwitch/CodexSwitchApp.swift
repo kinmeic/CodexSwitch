@@ -29,7 +29,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct CodexSwitchApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var appState = AppState.shared
+    // @ObservedObject rather than @StateObject: AppState.shared is a global
+    // singleton whose lifecycle is not tied to this Scene. Using @StateObject
+    // would semantically imply ownership that doesn't apply here.
+    @ObservedObject private var appState = AppState.shared
 
     var body: some Scene {
         MenuBarExtra {

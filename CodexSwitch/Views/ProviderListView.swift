@@ -132,12 +132,7 @@ struct ProviderEditor: View {
     let provider: CodexProvider
 
     @StateObject private var oauth = CodexOAuthManager.shared
-    @State private var name: String = ""
-    @State private var baseURL: String = ""
-    @State private var apiKey: String = ""
-    @State private var apiFormat: CodexApiFormat = .responses
-    @State private var models: [CodexCatalogModel] = []
-    @State private var reasoning: CodexChatReasoning?
+    @State private var draft: CodexProvider = PresetProviders.officialProvider
     @State private var hasChanges = false
     @State private var isLoaded = false
     @State private var testResult: String?
@@ -162,13 +157,7 @@ struct ProviderEditor: View {
                     Button {
                         testing = true
                         testResult = nil
-                        var temp = provider
-                        temp.name = name
-                        temp.baseURL = baseURL
-                        temp.apiKey = apiKey
-                        temp.apiFormat = apiFormat
-                        temp.modelCatalog = models
-                        appState.testConnection(provider: temp) { result in
+                        appState.testConnection(provider: draft) { result in
                             testing = false
                             switch result {
                             case .success(let msg): testResult = msg
@@ -181,7 +170,7 @@ struct ProviderEditor: View {
                             Text("Test Connection")
                         }
                     }
-                    .disabled(testing || apiKey.isEmpty)
+                    .disabled(testing || draft.apiKey.isEmpty)
 
                     if let testResult {
                         Text(testResult)
@@ -203,19 +192,21 @@ struct ProviderEditor: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { load(provider) }
         .onChange(of: provider.id) { _ in load(provider) }
-        .onChange(of: name) { _ in markChanged() }
-        .onChange(of: baseURL) { _ in markChanged() }
-        .onChange(of: apiKey) { _ in markChanged() }
-        .onChange(of: apiFormat) { newValue in
+        .onChange(of: draft.name) { _ in markChanged() }
+        .onChange(of: draft.baseURL) { _ in markChanged() }
+        .onChange(of: draft.apiKey) { _ in markChanged() }
+        .onChange(of: draft.apiFormat) { newValue in
             if newValue == .responses {
-                reasoning = nil
-            } else if reasoning == nil {
-                reasoning = .default
+                draft.chatReasoning = nil
+            } else if draft.chatReasoning == nil {
+                draft.chatReasoning = .default
             }
             markChanged()
         }
-        .onChange(of: models) { _ in markChanged() }
-        .onChange(of: reasoning) { _ in markChanged() }
+        .onChange(of: draft.modelCatalog) { _ in markChanged() }
+        .onChange(of: draft.chatReasoning) { _ in markChanged() }
+        .onChange(of: draft.reviewModel) { _ in markChanged() }
+        .onChange(of: draft.goalsEnabled) { _ in markChanged() }
     }
 
     // MARK: Subviews
@@ -279,25 +270,25 @@ struct ProviderEditor: View {
             sectionHeader("General")
             VStack(spacing: 0) {
                 fieldRow(label: "Name") {
-                    TextField("", text: $name)
+                    TextField("", text: $draft.name)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                 }
                 Divider().padding(.horizontal, 8)
                 fieldRow(label: "Base URL") {
-                    TextField("https://api.example.com", text: $baseURL)
+                    TextField("https://api.example.com", text: $draft.baseURL)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                 }
                 Divider().padding(.horizontal, 8)
                 fieldRow(label: "API Key") {
-                    SecureField("", text: $apiKey)
+                    SecureField("", text: $draft.apiKey)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                 }
                 Divider().padding(.horizontal, 8)
                 fieldRow(label: "API Format") {
-                    Picker("", selection: $apiFormat) {
+                    Picker("", selection: $draft.apiFormat) {
                         ForEach(CodexApiFormat.allCases, id: \.self) { format in
                             Text(format.displayName).tag(format)
                         }
@@ -305,6 +296,20 @@ struct ProviderEditor: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                Divider().padding(.horizontal, 8)
+                fieldRow(label: "Review Model") {
+                    TextField("gpt-5.5", text: $draft.reviewModel)
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
+                }
+                Divider().padding(.horizontal, 8)
+                fieldRow(label: "Goal Mode") {
+                    Spacer()
+                    Toggle("", isOn: $draft.goalsEnabled)
+                        .toggleStyle(.switch)
+                        .controlSize(.regular)
+                        .labelsHidden()
                 }
             }
             .background(Color(nsColor: .controlBackgroundColor))
@@ -320,19 +325,19 @@ struct ProviderEditor: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 8)
 
-            ModelCatalogTable(models: $models)
+            ModelCatalogTable(models: $draft.modelCatalog)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 16)
 
             // Chat Reasoning (Chat Completions only)
-            if apiFormat == .chatCompletions {
+            if draft.apiFormat == .chatCompletions {
                 sectionHeader("Chat Reasoning")
                 VStack(spacing: 0) {
                     fieldRow(label: "Enable Thinking") {
                         Spacer()
                         Toggle("", isOn: Binding(
-                            get: { reasoning?.supportsThinking ?? false },
-                            set: { reasoning?.supportsThinking = $0 }
+                            get: { draft.chatReasoning?.supportsThinking ?? false },
+                            set: { draft.chatReasoning?.supportsThinking = $0 }
                         ))
                         .toggleStyle(.switch)
                         .controlSize(.regular)
@@ -342,8 +347,8 @@ struct ProviderEditor: View {
                     fieldRow(label: "Enable Effort") {
                         Spacer()
                         Toggle("", isOn: Binding(
-                            get: { reasoning?.supportsEffort ?? false },
-                            set: { reasoning?.supportsEffort = $0 }
+                            get: { draft.chatReasoning?.supportsEffort ?? false },
+                            set: { draft.chatReasoning?.supportsEffort = $0 }
                         ))
                         .toggleStyle(.switch)
                         .controlSize(.regular)
@@ -352,8 +357,8 @@ struct ProviderEditor: View {
                     Divider().padding(.horizontal, 8)
                     fieldRow(label: "Thinking Param") {
                         Picker("", selection: Binding(
-                            get: { reasoning?.thinkingParam ?? "thinking" },
-                            set: { reasoning?.thinkingParam = $0 }
+                            get: { draft.chatReasoning?.thinkingParam ?? "thinking" },
+                            set: { draft.chatReasoning?.thinkingParam = $0 }
                         )) {
                             Text("thinking (GLM/Kimi Style)").lineLimit(1).tag("thinking")
                             Text("enable_thinking (Qwen/SiliconFlow Style)").lineLimit(1).tag("enable_thinking")
@@ -366,8 +371,8 @@ struct ProviderEditor: View {
                     Divider().padding(.horizontal, 8)
                     fieldRow(label: "Effort Param") {
                         Picker("", selection: Binding(
-                            get: { reasoning?.effortParam ?? "none" },
-                            set: { reasoning?.effortParam = $0 }
+                            get: { draft.chatReasoning?.effortParam ?? "none" },
+                            set: { draft.chatReasoning?.effortParam = $0 }
                         )) {
                             Text("none").lineLimit(1).tag("none")
                             Text("reasoning_effort (DeepSeek Style)").lineLimit(1).tag("reasoning_effort")
@@ -380,13 +385,12 @@ struct ProviderEditor: View {
                     Divider().padding(.horizontal, 8)
                     fieldRow(label: "Effort Mode") {
                         Picker("", selection: Binding(
-                            get: { reasoning?.effortValueMode ?? "passthrough" },
-                            set: { reasoning?.effortValueMode = $0 == "passthrough" ? nil : $0 }
+                            get: { draft.chatReasoning?.effortValueMode ?? .deepseek },
+                            set: { draft.chatReasoning?.effortValueMode = $0 }
                         )) {
-                            Text("Passthrough").lineLimit(1).tag("passthrough")
-                            Text("DeepSeek").lineLimit(1).tag("deepseek")
-                            Text("Low/High").lineLimit(1).tag("low_high")
-                            Text("OpenRouter").lineLimit(1).tag("openrouter")
+                            Text("DeepSeek").lineLimit(1).tag(CodexEffortValueMode.deepseek)
+                            Text("Low/High").lineLimit(1).tag(CodexEffortValueMode.lowHigh)
+                            Text("OpenRouter").lineLimit(1).tag(CodexEffortValueMode.openrouter)
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
@@ -395,8 +399,8 @@ struct ProviderEditor: View {
                     Divider().padding(.horizontal, 8)
                     fieldRow(label: "Output Format") {
                         Picker("", selection: Binding(
-                            get: { reasoning?.outputFormat ?? "reasoning_content" },
-                            set: { reasoning?.outputFormat = $0 }
+                            get: { draft.chatReasoning?.outputFormat ?? "reasoning_content" },
+                            set: { draft.chatReasoning?.outputFormat = $0 }
                         )) {
                             Text("reasoning_content (DeepSeek/GLM/Kimi/Qwen Style)").lineLimit(1).tag("reasoning_content")
                             Text("reasoning_details (MiniMax Style)").lineLimit(1).tag("reasoning_details")
@@ -445,12 +449,7 @@ struct ProviderEditor: View {
 
     private func load(_ provider: CodexProvider) {
         isLoaded = false
-        name = provider.name
-        baseURL = provider.baseURL
-        apiKey = provider.apiKey
-        apiFormat = provider.apiFormat
-        models = provider.modelCatalog
-        reasoning = provider.chatReasoning
+        draft = provider
         testResult = nil
         testing = false
         hasChanges = false
@@ -458,14 +457,7 @@ struct ProviderEditor: View {
     }
 
     private func save() {
-        var updated = provider
-        updated.name = name
-        updated.baseURL = baseURL
-        updated.apiKey = apiKey
-        updated.apiFormat = apiFormat
-        updated.modelCatalog = models
-        updated.chatReasoning = reasoning
-        appState.updateProvider(updated)
+        appState.updateProvider(draft)
         hasChanges = false
     }
 }
@@ -593,7 +585,7 @@ struct AddProviderSheet: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || baseURL.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(20)

@@ -125,14 +125,26 @@ enum CodexConfigManager {
         }
 
         let firstModel = provider.modelCatalog.first?.model ?? "gpt-5.5"
+        let contextWindow = provider.modelCatalog.first?.contextWindow
         let escapedName = tomlEscape(provider.name)
         let escapedURL = tomlEscape(baseURL)
         let escapedToken = tomlEscape(authToken)
         let escapedModel = tomlEscape(firstModel)
 
+        // Build top-level section
         var toml = """
         model_provider = "custom"
         model = "\(escapedModel)"
+
+        """
+
+        // review_model (omitted when empty)
+        let reviewModel = provider.reviewModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !reviewModel.isEmpty {
+            toml += "review_model = \"\(tomlEscape(reviewModel))\"\n"
+        }
+
+        toml += """
         model_reasoning_effort = "high"
         disable_response_storage = true
 
@@ -145,11 +157,28 @@ enum CodexConfigManager {
 
         """
 
+        // model_context_window and model_auto_compact_token_limit (90% of context window)
+        if let ctx = contextWindow, ctx > 0 {
+            toml += "model_context_window = \(ctx)\n"
+            let compactLimit = Int(Double(ctx) * 0.9)
+            toml += "model_auto_compact_token_limit = \(compactLimit)\n"
+        }
+
         // Add model catalog path if provider has models
         if !provider.modelCatalog.isEmpty {
             let catalogPath = AppEnvironment.modelCatalogPath
             let escapedCatalogPath = tomlEscape(catalogPath)
             toml += "model_catalog_json = \"\(escapedCatalogPath)\"\n"
+        }
+
+        // [features] goals
+        if provider.goalsEnabled {
+            toml += """
+
+            [features]
+            goals = true
+
+            """
         }
 
         try toml.write(toFile: configPath, atomically: true, encoding: .utf8)

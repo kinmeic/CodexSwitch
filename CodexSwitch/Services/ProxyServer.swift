@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import Network
 import os.log
 
@@ -40,7 +41,7 @@ struct ProxyRequestLog: Identifiable {
 
 // MARK: - ProxyServer
 
-final class ProxyServer {
+final class ProxyServer: ObservableObject {
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "com.codex.switch.proxy", qos: .userInitiated)
     private var gatewayToken: String = ""
@@ -187,6 +188,12 @@ final class ProxyServer {
             return
         }
 
+        // Models list (Codex CLI reachability check)
+        if method == "GET" && (path == "/models" || path == "/v1/models") {
+            handleModels(request: request, connection: connection, startedAt: startedAt)
+            return
+        }
+
         // Responses API routes
         if method == "POST" && (
             path == "/v1/responses" ||
@@ -201,6 +208,33 @@ final class ProxyServer {
         logger.warning("Unhandled: \(method) \(path)")
         recordRequest(method: method, path: path, providerName: nil, status: 404, startedAt: startedAt, error: "Not Found")
         sendResponse(connection: connection, status: 404, body: errorBody("Not Found"))
+    }
+
+    // MARK: - Models Handler
+
+    /// GET /models or GET /v1/models — Codex CLI probes this endpoint at startup
+    /// for reachability check. Return the cc-switch-managed model catalog file
+    /// so the format always matches what Codex expects.
+    private func handleModels(request: HTTPRequest, connection: NWConnection, startedAt: Date) {
+        guard validateAuth(request) else {
+            recordRequest(method: request.method, path: request.path, providerName: nil, status: 401, startedAt: startedAt, error: "Unauthorized")
+            sendResponse(connection: connection, status: 401, body: errorBody("Unauthorized"))
+            return
+        }
+
+        let catalogPath = AppEnvironment.modelCatalogPath
+        let catalog: Data
+
+        if FileManager.default.fileExists(atPath: catalogPath),
+           let data = FileManager.default.contents(atPath: catalogPath) {
+            catalog = data
+        } else {
+            // Return empty catalog if file doesn't exist
+            catalog = Data("{\"models\":[]}".utf8)
+        }
+
+        recordRequest(method: request.method, path: request.path, providerName: activeProvider?.name, status: 200, startedAt: startedAt)
+        sendResponse(connection: connection, status: 200, body: catalog, contentType: "application/json")
     }
 
     // MARK: - Responses Handler
@@ -291,7 +325,18 @@ final class ProxyServer {
 
     private func makeUpstreamRequest(provider: CodexProvider, path: String, body: Data,
                                      isStreaming: Bool, originalHeaders: [(String, String)]? = nil) -> URLRequest? {
-        guard let url = URL(string: provider.baseURL + path) else { return nil }
+        // Normalize baseURL: strip trailing slashes and any embedded /v1 suffix
+        // so that concatenation with a leading-slash path never produces "//".
+        var base = provider.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if base.hasSuffix("/v1/") {
+            base = String(base.dropLast(4))
+        } else if base.hasSuffix("/v1") {
+            base = String(base.dropLast(3))
+        }
+        while base.hasSuffix("/") {
+            base = String(base.dropLast())
+        }
+        guard let url = URL(string: base + path) else { return nil }
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
@@ -676,10 +721,8 @@ final class ProxyServer {
                 let header = "HTTP/1.1 \(status) \(self.statusText(for: status))\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n"
                 try await self.sendContent(Data(header.utf8), connection: connection)
 
-                // Convert streaming response
-                let convertedChunks = try await streamingConverter.convertStream(bytes: bytes)
-
-                for chunk in convertedChunks {
+                // Convert streaming response — chunks arrive incrementally via AsyncStream
+                for await chunk in streamingConverter.convertStream(bytes: bytes) {
                     try await self.sendContent(chunk, connection: connection)
                 }
 
@@ -759,8 +802,10 @@ final class ProxyServer {
         if !fullReasoning.isEmpty { message["reasoning_content"] = fullReasoning }
         if !toolCallDeltas.isEmpty {
             message["tool_calls"] = toolCallDeltas.map { call -> [String: Any] in
+                // If the ID was never populated by any delta chunk, generate a fallback.
+                let id = call.id.isEmpty ? "call_\(UUID().uuidString)" : call.id
                 return [
-                    "id": call.id,
+                    "id": id,
                     "type": "function",
                     "function": ["name": call.name, "arguments": call.arguments]
                 ]
@@ -871,7 +916,11 @@ final class ProxyServer {
                 "code": "proxy_error"
             ] as [String: Any]
         ]
-        return (try? JSONSerialization.data(withJSONObject: json)) ?? Data("{\"error\":{\"message\":\"\(message)\"}}".utf8)
+        // Always use JSONSerialization to avoid injection when message contains
+        // quotes, newlines, or other JSON-special characters. Fall back to a
+        // static safe body only if serialization itself fails.
+        return (try? JSONSerialization.data(withJSONObject: json))
+            ?? Data("{\"error\":{\"message\":\"Internal proxy error\",\"type\":\"proxy_error\",\"code\":\"proxy_error\"}}".utf8)
     }
 
     private func recordRequest(

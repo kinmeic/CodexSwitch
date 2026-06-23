@@ -1,4 +1,7 @@
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "com.codex.switch", category: "thinksplitter")
 
 /// A segment of streamed content after splitting out inline thinking tags.
 enum ThinkSegment {
@@ -68,7 +71,7 @@ final class InlineThinkSplitter {
     /// tag prefix (e.g. a lone `<`) is emitted as ordinary text rather than
     /// dropped, since by now it can never complete into a full tag and is far
     /// more likely to be literal text than an unterminated think block. An
-    /// already-opened ` Reid` with no close tag is emitted as reasoning.
+    /// already-opened `<think>` with no close tag is emitted as reasoning.
     func flush() -> [ThinkSegment] {
         var segments: [ThinkSegment] = []
         switch mode {
@@ -77,6 +80,7 @@ final class InlineThinkSplitter {
                 segments.append(.text(pending))
             }
         case .thinking:
+            logger.debug("Flushing unterminated think block (\(self.pending.count) chars) as reasoning")
             if !pending.isEmpty { segments.append(.reasoning(pending)) }
         }
         pending = ""
