@@ -97,7 +97,7 @@ final class AppState: ObservableObject {
         self.autoStartProxy = defaults.bool(forKey: "autoStartProxy")
         self.outboundProxyURL = defaults.string(forKey: "outboundProxyURL") ?? ""
         self.codexConfigPath = defaults.string(forKey: "codexConfigPath") ?? AppEnvironment.defaultCodexConfigPath
-        self.preserveOfficialAuth = defaults.bool(forKey: "preserveOfficialAuth")
+        self.preserveOfficialAuth = defaults.object(forKey: "preserveOfficialAuth") as? Bool ?? true
         self.injectPromptCacheKey = defaults.bool(forKey: "injectPromptCacheKey")
 
         // Load or generate gateway token
