@@ -385,12 +385,13 @@ struct ProviderEditor: View {
                     Divider().padding(.horizontal, 8)
                     fieldRow(label: "Effort Mode") {
                         Picker("", selection: Binding(
-                            get: { draft.chatReasoning?.effortValueMode ?? .deepseek },
+                            get: { draft.chatReasoning?.effortValueMode },
                             set: { draft.chatReasoning?.effortValueMode = $0 }
                         )) {
-                            Text("DeepSeek").lineLimit(1).tag(CodexEffortValueMode.deepseek)
-                            Text("Low/High").lineLimit(1).tag(CodexEffortValueMode.lowHigh)
-                            Text("OpenRouter").lineLimit(1).tag(CodexEffortValueMode.openrouter)
+                            Text("Passthrough").lineLimit(1).tag(Optional<CodexEffortValueMode>.none)
+                            Text("DeepSeek").lineLimit(1).tag(Optional<CodexEffortValueMode>.some(.deepseek))
+                            Text("Low/High").lineLimit(1).tag(Optional<CodexEffortValueMode>.some(.lowHigh))
+                            Text("OpenRouter").lineLimit(1).tag(Optional<CodexEffortValueMode>.some(.openrouter))
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)

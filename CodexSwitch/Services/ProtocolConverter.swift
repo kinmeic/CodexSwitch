@@ -14,6 +14,7 @@ final class ProtocolConverter {
     ) -> [String: Any] {
         var result: [String: Any] = [:]
         let model = body["model"] as? String ?? "gpt-4"
+        result["model"] = model
 
         // Map instructions -> system message
         var messages: [[String: Any]] = []

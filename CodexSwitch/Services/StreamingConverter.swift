@@ -28,6 +28,23 @@ final class StreamingConverter {
                     try await self._convertStream(bytes: bytes, yield: { continuation.yield($0) })
                 } catch {
                     logger.error("Stream conversion error: \(error.localizedDescription)")
+                    // Emit an SSE error event so the client knows the stream
+                    // was truncated. The HTTP 200 + SSE header has already been
+                    // sent by ProxyServer, so we can only signal via the SSE
+                    // channel itself.
+                    let errorJSON: [String: Any] = [
+                        "error": [
+                            "message": "Stream conversion failed: \(error.localizedDescription)",
+                            "type": "server_error",
+                            "code": "stream_error"
+                        ] as [String: Any]
+                    ]
+                    if let data = try? JSONSerialization.data(withJSONObject: errorJSON, options: [.sortedKeys]) {
+                        var sse = Data("data: ".utf8)
+                        sse.append(data)
+                        sse.append(Data("\n\n".utf8))
+                        continuation.yield(sse)
+                    }
                 }
             }
             continuation.onTermination = { _ in task.cancel() }
