@@ -131,56 +131,155 @@ enum CodexConfigManager {
         let escapedToken = tomlEscape(authToken)
         let escapedModel = tomlEscape(firstModel)
 
-        // Build top-level section
-        var toml = """
-        model_provider = "custom"
-        model = "\(escapedModel)"
-
-        """
-
-        // review_model (omitted when empty)
-        let reviewModel = provider.reviewModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !reviewModel.isEmpty {
-            toml += "review_model = \"\(tomlEscape(reviewModel))\"\n"
+        // Read existing config to preserve other sections (features, mcp_servers, etc.)
+        var existingLines: [String] = []
+        if FileManager.default.fileExists(atPath: configPath),
+           let existingContent = try? String(contentsOfFile: configPath, encoding: .utf8) {
+            existingLines = existingContent.components(separatedBy: "\n")
         }
 
-        toml += "model_reasoning_effort = \"high\"\n"
-        toml += "disable_response_storage = true\n"
+        // Parse existing config into sections
+        var sections: [(name: String?, lines: [String])] = []
+        var currentSection: String? = nil
+        var currentLines: [String] = []
 
-        // model_context_window and model_auto_compact_token_limit — top-level keys
-        if let ctx = contextWindow, ctx > 0 {
-            toml += "model_context_window = \(ctx)\n"
-            let compactLimit = Int(Double(ctx) * 0.9)
-            toml += "model_auto_compact_token_limit = \(compactLimit)\n"
+        for line in existingLines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                // Save previous section
+                if !currentLines.isEmpty || currentSection != nil {
+                    sections.append((currentSection, currentLines))
+                }
+                currentSection = String(trimmed.dropFirst().dropLast())
+                currentLines = []
+            } else {
+                currentLines.append(line)
+            }
+        }
+        // Save last section
+        if !currentLines.isEmpty || currentSection != nil {
+            sections.append((currentSection, currentLines))
         }
 
-        // model_catalog_json — top-level key pointing to our generated catalog
-        if !provider.modelCatalog.isEmpty {
-            toml += "model_catalog_json = \"\(AppEnvironment.CodexCatalogFilename)\"\n"
+        // Helper to update or add a key in a section
+        func updateKey(_ key: String, value: String, in section: String?, lines: inout [String]) {
+            let keyPattern = "^\(key)\\s*="
+            var found = false
+            for i in 0..<lines.count {
+                if lines[i].range(of: keyPattern, options: .regularExpression) != nil {
+                    lines[i] = "\(key) = \(value)"
+                    found = true
+                    break
+                }
+            }
+            if !found {
+                // Add at the end of the section (before trailing empty lines)
+                var insertIdx = lines.count
+                while insertIdx > 0 && lines[insertIdx - 1].trimmingCharacters(in: .whitespaces).isEmpty {
+                    insertIdx -= 1
+                }
+                lines.insert("\(key) = \(value)", at: insertIdx)
+            }
         }
 
-        // [features] goals — top-level section
+        // Update top-level section (section name is nil)
+        if let idx = sections.firstIndex(where: { $0.name == nil }) {
+            var lines = sections[idx].lines
+            updateKey("model_provider", value: "\"custom\"", in: nil, lines: &lines)
+            updateKey("model", value: "\"\(escapedModel)\"", in: nil, lines: &lines)
+
+            let reviewModel = provider.reviewModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !reviewModel.isEmpty {
+                updateKey("review_model", value: "\"\(tomlEscape(reviewModel))\"", in: nil, lines: &lines)
+            }
+
+            updateKey("model_reasoning_effort", value: "\"high\"", in: nil, lines: &lines)
+            updateKey("disable_response_storage", value: "true", in: nil, lines: &lines)
+
+            if let ctx = contextWindow, ctx > 0 {
+                updateKey("model_context_window", value: "\(ctx)", in: nil, lines: &lines)
+                let compactLimit = Int(Double(ctx) * 0.9)
+                updateKey("model_auto_compact_token_limit", value: "\(compactLimit)", in: nil, lines: &lines)
+            }
+
+            if !provider.modelCatalog.isEmpty {
+                updateKey("model_catalog_json", value: "\"\(AppEnvironment.CodexCatalogFilename)\"", in: nil, lines: &lines)
+            }
+
+            sections[idx].lines = lines
+        } else {
+            // No top-level section found, create one at the beginning
+            var lines: [String] = []
+            lines.append("model_provider = \"custom\"")
+            lines.append("model = \"\(escapedModel)\"")
+
+            let reviewModel = provider.reviewModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !reviewModel.isEmpty {
+                lines.append("review_model = \"\(tomlEscape(reviewModel))\"")
+            }
+
+            lines.append("model_reasoning_effort = \"high\"")
+            lines.append("disable_response_storage = true")
+
+            if let ctx = contextWindow, ctx > 0 {
+                lines.append("model_context_window = \(ctx)")
+                let compactLimit = Int(Double(ctx) * 0.9)
+                lines.append("model_auto_compact_token_limit = \(compactLimit)")
+            }
+
+            if !provider.modelCatalog.isEmpty {
+                lines.append("model_catalog_json = \"\(AppEnvironment.CodexCatalogFilename)\"")
+            }
+
+            sections.insert((nil, lines), at: 0)
+        }
+
+        // Update or create [model_providers.custom] section
+        if let idx = sections.firstIndex(where: { $0.name == "model_providers.custom" }) {
+            var lines = sections[idx].lines
+            updateKey("name", value: "\"\(escapedName)\"", in: "model_providers.custom", lines: &lines)
+            updateKey("base_url", value: "\"\(escapedURL)\"", in: "model_providers.custom", lines: &lines)
+            updateKey("wire_api", value: "\"responses\"", in: "model_providers.custom", lines: &lines)
+            updateKey("requires_openai_auth", value: "true", in: "model_providers.custom", lines: &lines)
+            updateKey("experimental_bearer_token", value: "\"\(escapedToken)\"", in: "model_providers.custom", lines: &lines)
+            sections[idx].lines = lines
+        } else {
+            // Add new section at the end
+            var lines: [String] = []
+            lines.append("name = \"\(escapedName)\"")
+            lines.append("base_url = \"\(escapedURL)\"")
+            lines.append("wire_api = \"responses\"")
+            lines.append("requires_openai_auth = true")
+            lines.append("experimental_bearer_token = \"\(escapedToken)\"")
+            sections.append(("model_providers.custom", lines))
+        }
+
+        // Update or create [features] section for goals
         if provider.goalsEnabled {
-            toml += """
-
-            [features]
-            goals = true
-
-            """
+            if let idx = sections.firstIndex(where: { $0.name == "features" }) {
+                var lines = sections[idx].lines
+                updateKey("goals", value: "true", in: "features", lines: &lines)
+                sections[idx].lines = lines
+            } else {
+                var lines: [String] = []
+                lines.append("goals = true")
+                sections.append(("features", lines))
+            }
         }
 
-        // [model_providers.custom] — must be last so subsequent keys don't
-        // accidentally fall inside this section
-        toml += """
+        // Reconstruct the file
+        var output: [String] = []
+        for (sectionName, lines) in sections {
+            if let name = sectionName {
+                if !output.isEmpty && !output.last!.isEmpty {
+                    output.append("")
+                }
+                output.append("[\(name)]")
+            }
+            output.append(contentsOf: lines)
+        }
 
-        [model_providers.custom]
-        name = "\(escapedName)"
-        base_url = "\(escapedURL)"
-        wire_api = "responses"
-        requires_openai_auth = true
-        experimental_bearer_token = "\(escapedToken)"
-        """
-
+        let toml = output.joined(separator: "\n")
         try toml.write(toFile: configPath, atomically: true, encoding: .utf8)
         logger.info("Wrote config.toml with baseURL: \(baseURL)")
     }
