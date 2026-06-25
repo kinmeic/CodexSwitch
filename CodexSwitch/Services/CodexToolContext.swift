@@ -98,31 +98,48 @@ struct CodexToolContext {
 
     /// Register a `type: "custom"` tool. Wrapped into a single-string-argument
     /// function so Chat Completions upstreams accept it.
+    ///
+    /// **apply_patch special-case**: Codex CLI registers apply_patch as a freeform
+    /// custom tool whose upstream description says "do not wrap the patch in JSON".
+    /// On the chat path the model MUST wrap the patch in a JSON `input` string, so
+    /// that instruction would mislead it. Replace the description with the
+    /// chat-path-accurate V4A guidance (single-sided `@@`, Add File `+`-prefix,
+    /// byte-exact context, etc.) so non-OpenAI chat providers emit a usable patch.
+    /// The response side (`ProtocolConverter` / `StreamingConverter`) detects the
+    /// same tool name and runs the preflight middle layer on the returned input.
     mutating func addCustomTool(_ tool: [String: Any]) -> [String: Any]? {
         guard let name = tool["name"] as? String else { return nil }
         let chatName = register(kind: .custom, originalName: name, chatName: name, namespace: nil)
 
-        // Serialize original definition into description so the LLM knows
-        // what the tool does.
-        let originalDef: String
-        if let data = try? JSONSerialization.data(withJSONObject: tool, options: []),
-           let str = String(data: data, encoding: .utf8) {
-            originalDef = "Original tool definition:\n```json\n\(str)\n```"
+        let toolDescription: String
+        let inputDescription: String
+        if ApplyPatchPreflight.isApplyPatchTool(name) {
+            // Chat-path-accurate V4A guidance replaces the freeform "do not wrap in JSON" description.
+            toolDescription = ApplyPatchGuidance.toolDescription
+            inputDescription = ApplyPatchGuidance.inputDescription
         } else {
-            originalDef = "Original tool definition: \(name)"
+            // Other custom tools: serialize the original definition into the
+            // description so the LLM knows what the tool does.
+            if let data = try? JSONSerialization.data(withJSONObject: tool, options: []),
+               let str = String(data: data, encoding: .utf8) {
+                toolDescription = "Original tool definition:\n```json\n\(str)\n```"
+            } else {
+                toolDescription = "Original tool definition: \(name)"
+            }
+            inputDescription = "Raw string input for the original custom tool. Provide the input as a plain string."
         }
 
         return [
             "type": "function",
             "function": [
                 "name": chatName,
-                "description": originalDef,
+                "description": toolDescription,
                 "parameters": [
                     "type": "object",
                     "properties": [
                         "input": [
                             "type": "string",
-                            "description": "Raw string input for the original custom tool. Provide the input as a plain string."
+                            "description": inputDescription
                         ]
                     ],
                     "required": ["input"]

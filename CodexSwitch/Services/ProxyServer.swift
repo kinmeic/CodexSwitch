@@ -602,6 +602,16 @@ final class ProxyServer: ObservableObject {
             return
         }
 
+        // Capture first-turn status before enrichWithHistory strips
+        // previous_response_id (the chat-path apply_patch guidance is injected
+        // only on the first turn to avoid N-copy accumulation across turns).
+        let isFirstTurn = (responsesRequest["previous_response_id"] as? String)?.isEmpty ?? true
+        // The current request's <cwd> for the apply_patch preflight middle layer
+        // (apply_patch tool-loop requests usually carry none → nil; the turn-start
+        // cwd remembered per-request is the fallback). Extract before enrichment
+        // (enrichment restores input items but doesn't touch the <cwd> string).
+        let primaryCwd = ApplyPatchPreflight.extractCwd(from: responsesRequest)
+
         // Enrich with history
         responsesRequest = historyStore.enrichWithHistory(responsesRequest)
 
@@ -614,7 +624,9 @@ final class ProxyServer: ObservableObject {
         var chatRequest = protocolConverter.responsesToChatCompletions(
             body: responsesRequest,
             reasoningConfig: provider.effectiveReasoning,
-            toolContext: &toolContext
+            toolContext: &toolContext,
+            isFirstTurn: isFirstTurn,
+            primaryCwd: primaryCwd
         )
 
         // Map model ID if needed
@@ -657,12 +669,13 @@ final class ProxyServer: ObservableObject {
         if isStreaming {
             streamForwardWithConversion(request: urlRequest, provider: provider,
                                        connection: connection, originalRequest: originalRequest,
-                                       startedAt: startedAt, toolContext: toolContext)
+                                       startedAt: startedAt, toolContext: toolContext,
+                                       primaryCwd: primaryCwd)
         } else {
             simpleForwardWithConversion(request: urlRequest, provider: provider,
                                       connection: connection, originalRequest: originalRequest,
                                       startedAt: startedAt, toolContext: toolContext,
-                                      originalBody: body)
+                                      originalBody: body, primaryCwd: primaryCwd)
         }
     }
 
@@ -673,7 +686,8 @@ final class ProxyServer: ObservableObject {
         originalRequest: HTTPRequest,
         startedAt: Date,
         toolContext: CodexToolContext,
-        originalBody: Data
+        originalBody: Data,
+        primaryCwd: String?
     ) {
         let task = NetworkSessionManager.shared.session.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
@@ -711,7 +725,7 @@ final class ProxyServer: ObservableObject {
                 self.simpleForwardWithConversion(request: sanitizedRequest, provider: provider,
                                                connection: connection, originalRequest: originalRequest,
                                                startedAt: startedAt, toolContext: toolContext,
-                                               originalBody: sanitizedBody)
+                                               originalBody: sanitizedBody, primaryCwd: primaryCwd)
                 return
             }
 
@@ -752,7 +766,8 @@ final class ProxyServer: ObservableObject {
                     let responsesResponse = self.protocolConverter.chatCompletionToResponse(
                         body: json,
                         reasoningConfig: provider.effectiveReasoning,
-                        toolContext: toolContext
+                        toolContext: toolContext,
+                        primaryCwd: primaryCwd
                     )
                     self.historyStore.cacheFromResponse(responsesResponse)
                     if let responseBody = try? JSONSerialization.data(withJSONObject: responsesResponse) {
@@ -776,7 +791,8 @@ final class ProxyServer: ObservableObject {
             let responsesResponse = self.protocolConverter.chatCompletionToResponse(
                 body: chatCompletion,
                 reasoningConfig: provider.effectiveReasoning,
-                toolContext: toolContext
+                toolContext: toolContext,
+                primaryCwd: primaryCwd
             )
 
             self.historyStore.cacheFromResponse(responsesResponse)
@@ -803,13 +819,15 @@ final class ProxyServer: ObservableObject {
         connection: NWConnection,
         originalRequest: HTTPRequest,
         startedAt: Date,
-        toolContext: CodexToolContext
+        toolContext: CodexToolContext,
+        primaryCwd: String?
     ) {
         let streamingConverter = StreamingConverter(
             provider: provider,
             protocolConverter: protocolConverter,
             historyStore: historyStore,
-            toolContext: toolContext
+            toolContext: toolContext,
+            primaryCwd: primaryCwd
         )
 
         Task { [weak self] in

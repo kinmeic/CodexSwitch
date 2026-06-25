@@ -10,16 +10,33 @@ final class ProtocolConverter {
     func responsesToChatCompletions(
         body: [String: Any],
         reasoningConfig: CodexChatReasoning?,
-        toolContext: inout CodexToolContext
+        toolContext: inout CodexToolContext,
+        isFirstTurn: Bool = true,
+        primaryCwd: String? = nil
     ) -> [String: Any] {
         var result: [String: Any] = [:]
         let model = body["model"] as? String ?? "gpt-4"
         result["model"] = model
 
+        // Remember this request's <cwd> for the apply_patch preflight middle layer.
+        // The turn-start request that carries <cwd> produces no apply_patch; the
+        // apply_patch shows up in a later tool-loop request with no cwd, so the
+        // memory point must be this per-request path (not inside optimizePatch).
+        ApplyPatchPreflight.rememberCwd(primaryCwd)
+
         // Map instructions -> system message
         var messages: [[String: Any]] = []
         if let instructions = body["instructions"] as? String, !instructions.isEmpty {
             messages.append(["role": "system", "content": instructions])
+        }
+
+        // Inject apply_patch chat-path guidance right after the Codex instructions,
+        // before user input — the model has seen the tool list and is about to call
+        // apply_patch. First-turn gating avoids N-copy accumulation across turns
+        // (later turns already carry the cached guidance). Only when apply_patch is
+        // registered this turn (Codex Desktop always registers it).
+        if isFirstTurn && ApplyPatchGuidance.toolsRegisterApplyPatch(body) {
+            messages.append(ApplyPatchGuidance.chatPathGuidanceMessage(language: Localization.shared.language))
         }
 
         // Map input[] -> messages[]
@@ -359,7 +376,8 @@ final class ProtocolConverter {
     func chatCompletionToResponse(
         body: [String: Any],
         reasoningConfig: CodexChatReasoning?,
-        toolContext: CodexToolContext = CodexToolContext()
+        toolContext: CodexToolContext = CodexToolContext(),
+        primaryCwd: String? = nil
     ) -> [String: Any] {
         var result: [String: Any] = [:]
 
@@ -432,7 +450,16 @@ final class ProtocolConverter {
 
                     if spec?.kind == .custom {
                         // Custom tool: extract "input" from JSON arguments, emit custom_tool_call
-                        let inputStr = extractCustomToolInput(arguments)
+                        var inputStr = extractCustomToolInput(arguments)
+                        // apply_patch preflight middle layer: recover known V4A
+                        // format errors (double @@, byte-exact context mismatch,
+                        // missing envelope, etc.) before sending to Codex. Only
+                        // gate envelope completion on JSON completeness so a
+                        // truncated patch is never "completed" into a half-apply.
+                        if ApplyPatchPreflight.isApplyPatchTool(chatName) {
+                            let jsonComplete = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String: Any]) != nil
+                            inputStr = ApplyPatchPreflight.optimizePatch(inputStr, primaryCwd: primaryCwd, jsonComplete: jsonComplete).0
+                        }
                         output.append([
                             "type": "custom_tool_call",
                             "id": "ctc_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))",

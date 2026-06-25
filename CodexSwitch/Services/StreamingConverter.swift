@@ -8,13 +8,18 @@ final class StreamingConverter {
     private let protocolConverter: ProtocolConverter
     private let historyStore: ChatHistoryStore
     private let toolContext: CodexToolContext
+    /// The current request's `<cwd>` (usually nil for apply_patch tool-loop
+    /// requests). Used as the primary cwd for the apply_patch preflight middle
+    /// layer; the candidate history is the fallback.
+    private let primaryCwd: String?
 
     init(provider: CodexProvider, protocolConverter: ProtocolConverter, historyStore: ChatHistoryStore,
-         toolContext: CodexToolContext = CodexToolContext()) {
+         toolContext: CodexToolContext = CodexToolContext(), primaryCwd: String? = nil) {
         self.provider = provider
         self.protocolConverter = protocolConverter
         self.historyStore = historyStore
         self.toolContext = toolContext
+        self.primaryCwd = primaryCwd
     }
 
     /// Convert an upstream Chat Completions SSE stream into Responses-API SSE
@@ -205,6 +210,19 @@ final class StreamingConverter {
 
                         // Emit the appropriate delta event based on tool kind
                         let spec = toolContext.spec(forChatName: toolCalls[index].chatName)
+
+                        // apply_patch: buffer args only, do NOT stream raw
+                        // `{"input":"..."}` JSON-fragment deltas. The full
+                        // (preflight-repaired) V4A input is emitted once at
+                        // completion via custom_tool_call_input.delta + .done.
+                        // Streaming JSON fragments as input deltas would feed the
+                        // client wrong (JSON, not V4A) bytes; the preflight middle
+                        // layer also can't run until the args are fully assembled.
+                        if spec?.kind == .custom,
+                           ApplyPatchPreflight.isApplyPatchTool(toolCalls[index].chatName) {
+                            continue
+                        }
+
                         let deltaEventType: String
                         let deltaField: String
                         let deltaValue: String
@@ -362,6 +380,32 @@ final class StreamingConverter {
 
         // Finalize output items
         for (index, item) in output.enumerated() {
+            // apply_patch: the input was buffered (not streamed as raw JSON
+            // fragments) and preflight-repaired. Emit the full repaired input as
+            // a single delta + done before the output_item.done, so the client
+            // receives the correct V4A bytes via the proper channel.
+            if (item["type"] as? String) == "custom_tool_call",
+               ApplyPatchPreflight.isApplyPatchTool(item["name"] as? String ?? "") {
+                let itemId = item["id"] as? String ?? ""
+                let callId = item["call_id"] as? String ?? ""
+                let inputVal = item["input"] as? String ?? ""
+                events.append(formatSSE([
+                    "type": "response.custom_tool_call_input.delta",
+                    "response_id": responseId,
+                    "item_id": itemId,
+                    "output_index": index,
+                    "call_id": callId,
+                    "delta": inputVal
+                ]))
+                events.append(formatSSE([
+                    "type": "response.custom_tool_call_input.done",
+                    "response_id": responseId,
+                    "item_id": itemId,
+                    "output_index": index,
+                    "call_id": callId,
+                    "input": inputVal
+                ]))
+            }
             events.append(formatSSE([
                 "type": "response.output_item.done",
                 "response_id": responseId,
@@ -412,14 +456,26 @@ final class StreamingConverter {
 
             if spec?.kind == .custom {
                 // Custom tool: extract input from arguments
-                let inputStr = extractCustomToolInput(call.arguments)
-                output.append([
+                var inputStr = extractCustomToolInput(call.arguments)
+                // apply_patch preflight middle layer: recover known V4A format
+                // errors before sending to Codex. Gate envelope completion on JSON
+                // completeness so a truncated patch is never "completed".
+                let isApplyPatch = ApplyPatchPreflight.isApplyPatchTool(call.chatName)
+                if isApplyPatch {
+                    let jsonComplete = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String: Any]) != nil
+                    inputStr = ApplyPatchPreflight.optimizePatch(inputStr, primaryCwd: primaryCwd, jsonComplete: jsonComplete).0
+                }
+                var item: [String: Any] = [
                     "type": "custom_tool_call",
                     "call_id": call.id,
                     "name": call.chatName,
                     "input": inputStr,
                     "status": "completed"
-                ])
+                ]
+                // apply_patch needs the item id for the completion-time
+                // custom_tool_call_input.delta + .done events.
+                if isApplyPatch { item["id"] = call.itemId }
+                output.append(item)
             } else if spec?.kind == .toolSearch {
                 // Tool search: parse arguments as JSON object
                 let argsObj = parseToolArguments(call.arguments)
