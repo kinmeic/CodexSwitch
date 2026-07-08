@@ -36,7 +36,7 @@ Or manually:
 ```bash
 ruby generate_project.rb
 xcodebuild -project CodexSwitch.xcodeproj -target CodexSwitch \
-  -configuration Debug CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO ARCHS=arm64
+  -configuration Debug CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO ARCHS="arm64 x86_64"
 ```
 
 ## Usage
