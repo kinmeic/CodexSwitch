@@ -163,6 +163,20 @@ final class Localization: ObservableObject {
         "Server reachable (HTTP %d)": "服务器可达（HTTP %d）",
         "Unexpected response (HTTP %d)": "意外的响应（HTTP %d）",
         "Invalid URL": "URL 无效",
+
+        // MARK: Codex auth-account (multi-account switching)
+        "Provider Type": "账号类型",
+        "Third-party Provider": "第三方服务商",
+        "Codex Auth Account": "Codex 账号",
+        "New Account": "新建账号",
+        "Account %d": "账号 %d",
+        "Switches the Codex CLI account by overwriting ~/.codex/auth.json with the content below. Both the API-key schema and the ChatGPT-login schema are supported.": "通过用下方内容覆盖 ~/.codex/auth.json 来切换 Codex CLI 账号。API 密钥格式与 ChatGPT 登录格式均支持。",
+        "Paste the full content of ~/.codex/auth.json here.": "在此粘贴 ~/.codex/auth.json 的完整内容。",
+        "Import from ~/.codex/auth.json": "从 ~/.codex/auth.json 导入",
+        "Save Current Login as Account": "将当前登录保存为账号",
+        "You can paste the auth.json content after adding, in the account editor.": "添加后可在账号编辑器中粘贴 auth.json 内容。",
+        "Invalid JSON": "JSON 格式无效",
+        "auth.json content is empty": "auth.json 内容为空",
     ]
 
     private init() {

@@ -11,14 +11,14 @@ if [ ! -d "CodexSwitch.xcodeproj" ]; then
     ruby generate_project.rb
 fi
 
-# Build
+# Build (universal: arm64 + x86_64)
 xcodebuild \
     -project CodexSwitch.xcodeproj \
     -target CodexSwitch \
     -configuration Debug \
     CODE_SIGNING_ALLOWED=NO \
     ONLY_ACTIVE_ARCH=NO \
-    ARCHS=arm64 \
+    ARCHS="arm64 x86_64" \
     2>&1 | tail -20
 
 echo ""
