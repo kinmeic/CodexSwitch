@@ -159,6 +159,18 @@ struct CodexProvider: Identifiable, Codable, Equatable {
     var modelCatalog: [CodexCatalogModel]
     var chatReasoning: CodexChatReasoning?
     var isOfficial: Bool
+    /// A "Codex account" that authenticates by overwriting `~/.codex/auth.json`
+    /// with the stored `authJSON` blob. Distinct from third-party providers
+    /// (which use an API key + custom config.toml) and from the official
+    /// provider (single ChatGPT device-code login in Keychain). Multiple
+    /// auth-accounts can coexist to support switching between several Codex
+    /// logins / API keys.
+    var isAuthAccount: Bool
+    /// Full `~/.codex/auth.json` content for an auth-account. May be either
+    /// schema: `{"OPENAI_API_KEY":"sk-..."}` or the ChatGPT-login
+    /// `{"auth_mode":"chatgpt","tokens":{...},"last_refresh":...}`. Empty for
+    /// non-auth-account providers.
+    var authJSON: String
     /// Model used for code review tasks (e.g. `gpt-5.5`). Written to config.toml
     /// as `review_model`. Empty string means the field is omitted.
     var reviewModel: String
@@ -167,7 +179,7 @@ struct CodexProvider: Identifiable, Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, baseURL, apiKey, apiFormat, modelCatalog, chatReasoning, isOfficial,
-             reviewModel, goalsEnabled
+             isAuthAccount, authJSON, reviewModel, goalsEnabled
     }
 
     init(
@@ -179,6 +191,8 @@ struct CodexProvider: Identifiable, Codable, Equatable {
         modelCatalog: [CodexCatalogModel] = [],
         chatReasoning: CodexChatReasoning? = nil,
         isOfficial: Bool = false,
+        isAuthAccount: Bool = false,
+        authJSON: String = "",
         reviewModel: String = "gpt-5.5",
         goalsEnabled: Bool = false
     ) {
@@ -190,6 +204,8 @@ struct CodexProvider: Identifiable, Codable, Equatable {
         self.modelCatalog = modelCatalog
         self.chatReasoning = chatReasoning
         self.isOfficial = isOfficial
+        self.isAuthAccount = isAuthAccount
+        self.authJSON = authJSON
         self.reviewModel = reviewModel
         self.goalsEnabled = goalsEnabled
     }
@@ -204,6 +220,8 @@ struct CodexProvider: Identifiable, Codable, Equatable {
         modelCatalog = try container.decodeIfPresent([CodexCatalogModel].self, forKey: .modelCatalog) ?? []
         chatReasoning = try container.decodeIfPresent(CodexChatReasoning.self, forKey: .chatReasoning)
         isOfficial = try container.decodeIfPresent(Bool.self, forKey: .isOfficial) ?? false
+        isAuthAccount = try container.decodeIfPresent(Bool.self, forKey: .isAuthAccount) ?? false
+        authJSON = try container.decodeIfPresent(String.self, forKey: .authJSON) ?? ""
         reviewModel = try container.decodeIfPresent(String.self, forKey: .reviewModel) ?? "gpt-5.5"
         goalsEnabled = try container.decodeIfPresent(Bool.self, forKey: .goalsEnabled) ?? false
     }

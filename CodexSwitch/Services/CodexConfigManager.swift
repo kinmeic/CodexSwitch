@@ -48,6 +48,61 @@ enum CodexConfigManager {
         }
     }
 
+    // MARK: - Apply Auth Account
+
+    /// Apply an auth-account provider: restore `config.toml` to official mode
+    /// (managed keys/sections pruned, model catalog removed) and overwrite
+    /// `~/.codex/auth.json` with the account's stored full content. This is
+    /// the multi-account switch path — modeled on cc-switch's
+    /// `write_codex_live_for_provider`, but only the auth.json blob is stored
+    /// per account (no per-account config.toml).
+    static func applyAuthAccount(_ provider: CodexProvider) throws {
+        let paths = resolvePaths()
+        let snapshot = snapshotFiles([paths.configTOMLPath, paths.modelCatalogPath, paths.authJSONPath])
+
+        do {
+            try ensureDirectoryExists(paths.codexConfigPath)
+
+            // Restore official config.toml + remove catalog. restoreOfficial()
+            // also strips OPENAI_API_KEY from auth.json, but that is
+            // immediately superseded by the full auth.json write below.
+            try restoreOfficial()
+
+            // Overwrite auth.json with the stored full content. Validate it
+            // parses as JSON first so a malformed blob never reaches the CLI.
+            let trimmed = provider.authJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw NSError(domain: "codex.config", code: -1,
+                              userInfo: [NSLocalizedDescriptionKey: L10n.tr("auth.json content is empty")])
+            }
+            guard let data = trimmed.data(using: .utf8) else {
+                throw NSError(domain: "codex.config", code: -1,
+                              userInfo: [NSLocalizedDescriptionKey: L10n.tr("Invalid JSON")])
+            }
+            _ = try JSONSerialization.jsonObject(with: data)
+            try data.write(to: URL(fileURLWithPath: paths.authJSONPath), options: .atomic)
+
+            logger.info("Applied auth-account '\(provider.name)' to Codex auth.json")
+        } catch {
+            restoreFiles(snapshot)
+            logger.error("Rolled back Codex config after auth-account apply failure: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    /// Read the current live `~/.codex/auth.json` content (for backfilling
+    /// the outgoing account before a switch, so CLI-refreshed tokens are
+    /// captured). Returns nil when the file is missing or empty.
+    static func readLiveAuthJSON() -> String? {
+        let path = AppEnvironment.authJSONPath
+        guard FileManager.default.fileExists(atPath: path),
+              let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return nil
+        }
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     // MARK: - Restore Official
 
     // MARK: - Restore Official

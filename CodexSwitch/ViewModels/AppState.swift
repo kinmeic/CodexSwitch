@@ -184,10 +184,19 @@ final class AppState: ObservableObject {
         guard !provider.isOfficial else { return }
         if let idx = providers.firstIndex(where: { $0.id == provider.id }) {
             let isActiveProvider = provider.id == activeProviderId
+            let oldProvider = providers[idx]
             providers[idx] = provider
             objectWillChange.send()
             if isActiveProvider {
-                if proxyServer.running {
+                if provider.isAuthAccount {
+                    // Only rewrite the live auth.json if the blob was actually
+                    // edited; otherwise leave the (possibly CLI-refreshed)
+                    // live file untouched so a name-only save doesn't clobber
+                    // fresh tokens.
+                    if provider.authJSON != oldProvider.authJSON {
+                        applyAuthAccountConfig(provider)
+                    }
+                } else if proxyServer.running {
                     syncRunningProxy(provider: provider, showRestartNotice: true)
                 } else if isApplied {
                     // Re-apply config even if proxy not running
@@ -211,16 +220,57 @@ final class AppState: ObservableObject {
         if activeProviderId == provider.id {
             if provider.isOfficial {
                 restoreOfficialCodexConfig()
+            } else if provider.isAuthAccount {
+                applyAuthAccountConfig(provider)
             }
             return
+        }
+        // Capture the outgoing provider before reassigning so we can backfill
+        // its stored auth.json from the live file (the CLI may have refreshed
+        // tokens while it was active). Only auth-accounts carry a stored blob.
+        let outgoing = activeProvider
+        if let outgoing = outgoing, outgoing.isAuthAccount {
+            backfillAuthJSON(into: outgoing)
         }
         activeProviderId = provider.id
         if provider.isOfficial {
             restoreOfficialCodexConfig()
             return
         }
+        if provider.isAuthAccount {
+            applyAuthAccountConfig(provider)
+            return
+        }
         if proxyServer.running, let activeProvider {
             syncRunningProxy(provider: activeProvider, showRestartNotice: true)
+        }
+    }
+
+    // MARK: - Auth Account Switching
+
+    /// Write the live `~/.codex/auth.json` back into the outgoing auth-account's
+    /// stored `authJSON`, so a later switch-back restores the freshest tokens.
+    private func backfillAuthJSON(into outgoing: CodexProvider) {
+        guard let live = CodexConfigManager.readLiveAuthJSON() else { return }
+        guard let idx = providers.firstIndex(where: { $0.id == outgoing.id }) else { return }
+        var updated = providers[idx]
+        guard updated.authJSON != live else { return }
+        updated.authJSON = live
+        providers[idx] = updated
+    }
+
+    /// Apply an auth-account: stop any running proxy, restore official
+    /// config.toml, and overwrite `~/.codex/auth.json` with the account's
+    /// stored full content.
+    private func applyAuthAccountConfig(_ provider: CodexProvider) {
+        do {
+            proxyServer.stop()
+            try CodexConfigManager.applyAuthAccount(provider)
+            showCodexRestartNotice()
+            logger.info("Applied auth-account '\(provider.name)' to Codex config")
+        } catch {
+            proxyServer.lastError = String(format: L10n.tr("Failed to apply Codex config: %@"), error.localizedDescription)
+            logger.error("Failed to apply auth-account config: \(error.localizedDescription)")
         }
     }
 

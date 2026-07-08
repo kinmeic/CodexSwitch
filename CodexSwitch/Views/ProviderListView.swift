@@ -8,71 +8,80 @@ struct ProviderListView: View {
 
     var body: some View {
         HSplitView {
-            // Provider list — narrow sidebar
-            VStack(spacing: 0) {
-                List(selection: $selectedId) {
-                    ForEach(appState.providers) { provider in
-                        ProviderRow(provider: provider, isActive: provider.id == appState.activeProviderId)
-                            .tag(provider.id)
-                            .contextMenu {
-                                if !provider.isOfficial {
-                                    Button(l10n.tr("Duplicate")) {
-                                        let copy = appState.duplicateProvider(provider)
-                                        selectedId = copy.id
-                                    }
-                                    Button(l10n.tr("Set Active")) {
-                                        appState.setActive(provider)
-                                    }
-                                    Divider()
-                                    Button(l10n.tr("Delete"), role: .destructive) {
-                                        appState.removeProvider(provider)
-                                        if selectedId == provider.id { selectedId = nil }
-                                    }
-                                }
-                            }
-                    }
-                }
-                .listStyle(.sidebar)
-
-                // Bottom toolbar
-                HStack {
-                    Button { showAddSheet = true } label: { Image(systemName: "plus") }
-                        .buttonStyle(.borderless)
-                        .help(l10n.tr("Add provider"))
-                    Spacer()
-                    if let selectedId, let provider = appState.providers.first(where: { $0.id == selectedId }) {
-                        Button { appState.setActive(provider) } label: { Image(systemName: "checkmark.circle") }
-                            .buttonStyle(.borderless)
-                            .help(l10n.tr("Set as active provider"))
-                        if !provider.isOfficial {
-                            Button {
-                                appState.removeProvider(provider)
-                                self.selectedId = nil
-                            } label: { Image(systemName: "minus") }
-                                .buttonStyle(.borderless)
-                                .help(l10n.tr("Remove provider"))
-                        }
-                    }
-                }
-                .padding(8)
-            }
-            .frame(minWidth: 170, idealWidth: 200, maxWidth: 240)
-
-            // Detail editor
-            if let selectedId, let provider = appState.providers.first(where: { $0.id == selectedId }) {
-                ProviderEditor(provider: provider)
-                    .environmentObject(appState)
-                    .id(provider.id)
-                    .frame(maxWidth: .infinity)
-            } else {
-                VStack { Spacer(); Text(l10n.tr("Select a provider")).foregroundStyle(.secondary); Spacer() }
-                    .frame(maxWidth: .infinity)
-            }
+            sidebar
+            detailPane
         }
         .onAppear { selectInitialProviderIfNeeded() }
         .onChange(of: appState.providers) { _ in reconcileSelection() }
         .sheet(isPresented: $showAddSheet) {
             AddProviderSheet().environmentObject(appState)
+        }
+    }
+
+    // Provider list — narrow sidebar
+    @ViewBuilder
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            List(selection: $selectedId) {
+                ForEach(appState.providers) { provider in
+                    ProviderRow(provider: provider, isActive: provider.id == appState.activeProviderId)
+                        .tag(provider.id)
+                        .contextMenu {
+                            if !provider.isOfficial {
+                                Button(l10n.tr("Duplicate")) {
+                                    let copy = appState.duplicateProvider(provider)
+                                    selectedId = copy.id
+                                }
+                                Button(l10n.tr("Set Active")) {
+                                    appState.setActive(provider)
+                                }
+                                Divider()
+                                Button(l10n.tr("Delete"), role: .destructive) {
+                                    appState.removeProvider(provider)
+                                    if selectedId == provider.id { selectedId = nil }
+                                }
+                            }
+                        }
+                }
+            }
+            .listStyle(.sidebar)
+
+            // Bottom toolbar
+            HStack {
+                Button { showAddSheet = true } label: { Image(systemName: "plus") }
+                    .buttonStyle(.borderless)
+                    .help(l10n.tr("Add provider"))
+                Spacer()
+                if let selectedId, let provider = appState.providers.first(where: { $0.id == selectedId }) {
+                    Button { appState.setActive(provider) } label: { Image(systemName: "checkmark.circle") }
+                        .buttonStyle(.borderless)
+                        .help(l10n.tr("Set as active provider"))
+                    if !provider.isOfficial {
+                        Button {
+                            appState.removeProvider(provider)
+                            self.selectedId = nil
+                        } label: { Image(systemName: "minus") }
+                            .buttonStyle(.borderless)
+                            .help(l10n.tr("Remove provider"))
+                    }
+                }
+            }
+            .padding(8)
+        }
+        .frame(minWidth: 170, idealWidth: 200, maxWidth: 240)
+    }
+
+    // Detail editor
+    @ViewBuilder
+    private var detailPane: some View {
+        if let selectedId, let provider = appState.providers.first(where: { $0.id == selectedId }) {
+            ProviderEditor(provider: provider, onSelectInSidebar: { id in self.selectedId = id })
+                .environmentObject(appState)
+                .id(provider.id)
+                .frame(maxWidth: .infinity)
+        } else {
+            VStack { Spacer(); Text(l10n.tr("Select a provider")).foregroundStyle(.secondary); Spacer() }
+                .frame(maxWidth: .infinity)
         }
     }
 
@@ -106,9 +115,18 @@ struct ProviderRow: View {
                         Image(systemName: "checkmark.shield")
                             .foregroundStyle(.blue)
                             .font(.caption)
+                    } else if provider.isAuthAccount {
+                        Image(systemName: "person.crop.circle.badge.checkmark")
+                            .foregroundStyle(.purple)
+                            .font(.caption)
                     }
                 }
-                if !provider.isOfficial {
+                if provider.isAuthAccount {
+                    Text("auth.json")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else if !provider.isOfficial {
                     Text(provider.apiFormat.displayName)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -132,6 +150,9 @@ struct ProviderEditor: View {
     @EnvironmentObject private var appState: AppState
     @ObservedObject private var l10n = Localization.shared
     let provider: CodexProvider
+    /// Notifies the parent list that a newly-created provider should be
+    /// selected in the sidebar (e.g. after "Save Current Login as Account").
+    var onSelectInSidebar: ((UUID) -> Void)? = nil
 
     @StateObject private var oauth = CodexOAuthManager.shared
     @State private var draft: CodexProvider = PresetProviders.officialProvider
@@ -147,54 +168,16 @@ struct ProviderEditor: View {
                 VStack(alignment: .leading, spacing: 0) {
                     if provider.isOfficial {
                         officialView
+                    } else if provider.isAuthAccount {
+                        authAccountView
                     } else {
                         customView
                     }
                 }
             }
 
-            // Bottom bar: Test Connection + Save (outside scroll)
             if !provider.isOfficial {
-                Divider()
-                HStack {
-                    Button {
-                        testing = true
-                        testResult = nil
-                        testSucceeded = false
-                        appState.testConnection(provider: draft) { result in
-                            testing = false
-                            switch result {
-                            case .success(let msg):
-                                testResult = msg
-                                testSucceeded = true
-                            case .failure(let err):
-                                testResult = String(format: l10n.tr("Failed: %@"), err.localizedDescription)
-                                testSucceeded = false
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            if testing { ProgressView().controlSize(.small) }
-                            Text(l10n.tr("Test Connection"))
-                        }
-                    }
-                    .disabled(testing || draft.apiKey.isEmpty)
-
-                    if let testResult {
-                        Text(testResult)
-                            .font(.caption)
-                            .foregroundStyle(testSucceeded ? .green : .secondary)
-                            .lineLimit(1)
-                    }
-
-                    Spacer()
-
-                    if hasChanges {
-                        Button(l10n.tr("Save")) { save() }
-                            .buttonStyle(.borderedProminent)
-                    }
-                }
-                .padding(16)
+                bottomBar
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -215,9 +198,61 @@ struct ProviderEditor: View {
         .onChange(of: draft.chatReasoning) { _ in markChanged() }
         .onChange(of: draft.reviewModel) { _ in markChanged() }
         .onChange(of: draft.goalsEnabled) { _ in markChanged() }
+        .onChange(of: draft.authJSON) { _ in markChanged() }
     }
 
     // MARK: Subviews
+
+    /// Bottom action bar: Test Connection (third-party only) + Save.
+    /// Auth-accounts authenticate via the official endpoint, so they show no
+    /// connection test.
+    @ViewBuilder
+    private var bottomBar: some View {
+        Divider()
+        HStack {
+            if !provider.isAuthAccount {
+                testConnectionButton
+            }
+            if let testResult {
+                Text(testResult)
+                    .font(.caption)
+                    .foregroundStyle(testSucceeded ? .green : .secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if hasChanges {
+                Button(l10n.tr("Save")) { save() }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(16)
+    }
+
+    @ViewBuilder
+    private var testConnectionButton: some View {
+        Button {
+            testing = true
+            testResult = nil
+            testSucceeded = false
+            appState.testConnection(provider: draft) { result in
+                testing = false
+                switch result {
+                case .success(let msg):
+                    testResult = msg
+                    testSucceeded = true
+                case .failure(let err):
+                    testResult = String(format: l10n.tr("Failed: %@"), err.localizedDescription)
+                    testSucceeded = false
+                }
+            }
+        } label: {
+            HStack {
+                if testing { ProgressView().controlSize(.small) }
+                Text(l10n.tr("Test Connection"))
+            }
+        }
+        .disabled(testing || draft.apiKey.isEmpty)
+    }
 
     private var officialView: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -255,6 +290,22 @@ struct ProviderEditor: View {
                 // Awaiting/exchanging phases: no extra button needed —
                 // the flow's own controls live inside ChatGPTLoginStatus.
 
+                Button(l10n.tr("Save Current Login as Account")) {
+                    guard let live = CodexConfigManager.readLiveAuthJSON() else { return }
+                    let count = appState.providers.filter { $0.isAuthAccount }.count + 1
+                    let account = CodexProvider(
+                        name: String(format: l10n.tr("Account %d"), count),
+                        baseURL: "",
+                        apiKey: "",
+                        isAuthAccount: true,
+                        authJSON: live
+                    )
+                    appState.addProvider(account)
+                    onSelectInSidebar?(account.id)
+                }
+                .buttonStyle(.bordered)
+                .disabled(CodexConfigManager.readLiveAuthJSON() == nil)
+
                 Button(l10n.tr("Restore Official Login")) {
                     appState.setActive(provider)
                 }
@@ -267,6 +318,74 @@ struct ProviderEditor: View {
                 oauth.surfaceStoredAccount(account)
             } else {
                 oauth.surfaceAuthJSONAccountIfPresent()
+            }
+        }
+        .padding(20)
+    }
+
+    /// Editor for an auth-account provider: a name plus the full
+    /// `~/.codex/auth.json` content pasted verbatim. Switching to this
+    /// account overwrites the live auth.json with this blob.
+    private var authAccountView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(l10n.tr("Codex Auth Account"))
+                .font(.headline)
+            Text(l10n.tr("Switches the Codex CLI account by overwriting ~/.codex/auth.json with the content below. Both the API-key schema and the ChatGPT-login schema are supported."))
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 0) {
+                sectionHeader(l10n.tr("General"))
+                VStack(spacing: 0) {
+                    fieldRow(label: l10n.tr("Name")) {
+                        TextField("", text: $draft.name)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(6)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+
+                sectionHeader("auth.json")
+                Text(l10n.tr("Paste the full content of ~/.codex/auth.json here."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+
+                ZStack(alignment: .topLeading) {
+                    if draft.authJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("{\n  \"OPENAI_API_KEY\": \"sk-...\"\n}")
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .padding(8)
+                            .allowsHitTesting(false)
+                    }
+                    TextEditor(text: $draft.authJSON)
+                        .font(.system(.body, design: .monospaced))
+                        .scrollContentBackground(.hidden)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                }
+                .frame(minHeight: 220)
+                .cornerRadius(6)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+
+                HStack {
+                    Button {
+                        if let live = CodexConfigManager.readLiveAuthJSON() {
+                            draft.authJSON = live
+                        }
+                    } label: {
+                        Label(l10n.tr("Import from ~/.codex/auth.json"), systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
             }
         }
         .padding(20)
@@ -568,35 +687,67 @@ struct AddProviderSheet: View {
 
     @State private var name = ""
     @State private var baseURL = ""
+    @State private var isAuthAccount = false
+
+    private var canAdd: Bool {
+        let nameOk = !name.trimmingCharacters(in: .whitespaces).isEmpty
+        if isAuthAccount { return nameOk }
+        return nameOk && !baseURL.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var body: some View {
         VStack(spacing: 16) {
             Text(l10n.tr("Add Provider")).font(.headline)
             Form {
+                Picker(l10n.tr("Provider Type"), selection: $isAuthAccount) {
+                    Text(l10n.tr("Third-party Provider")).tag(false)
+                    Text(l10n.tr("Codex Auth Account")).tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
                 TextField(l10n.tr("Name"), text: $name)
-                TextField(l10n.tr("Base URL"), text: $baseURL)
-                    .textFieldStyle(.roundedBorder)
+
+                if !isAuthAccount {
+                    TextField(l10n.tr("Base URL"), text: $baseURL)
+                        .textFieldStyle(.roundedBorder)
+                } else {
+                    Text(l10n.tr("You can paste the auth.json content after adding, in the account editor."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .formStyle(.grouped)
             HStack {
                 Button(l10n.tr("Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(l10n.tr("Add")) {
-                    let provider = CodexProvider(
-                        name: name.isEmpty ? l10n.tr("New Provider") : name,
-                        baseURL: baseURL,
-                        apiKey: "",
-                        apiFormat: .chatCompletions,
-                        modelCatalog: [],
-                        chatReasoning: .default,
-                        isOfficial: false
-                    )
+                    let provider: CodexProvider
+                    if isAuthAccount {
+                        provider = CodexProvider(
+                            name: name.isEmpty ? l10n.tr("New Account") : name,
+                            baseURL: "",
+                            apiKey: "",
+                            isAuthAccount: true,
+                            authJSON: ""
+                        )
+                    } else {
+                        provider = CodexProvider(
+                            name: name.isEmpty ? l10n.tr("New Provider") : name,
+                            baseURL: baseURL,
+                            apiKey: "",
+                            apiFormat: .chatCompletions,
+                            modelCatalog: [],
+                            chatReasoning: .default,
+                            isOfficial: false
+                        )
+                    }
                     appState.addProvider(provider)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || baseURL.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(!canAdd)
             }
         }
         .padding(20)
